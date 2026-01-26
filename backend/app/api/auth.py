@@ -1,0 +1,226 @@
+############################################################
+#
+# mindrouter2 - LLM Inference Translator and Load Balancer
+#
+# auth.py: API authentication and authorization middleware
+#
+# Luke Sheneman
+# Research Computing and Data Services (RCDS)
+# Institute for Interdisciplinary Data Sciences (IIDS)
+# University of Idaho
+# sheneman@uidaho.edu
+#
+############################################################
+
+"""API authentication and authorization."""
+
+from datetime import datetime, timezone
+from typing import Optional, Tuple
+
+from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.app.db import crud
+from backend.app.db.models import ApiKey, ApiKeyStatus, User, UserRole
+from backend.app.db.session import get_async_db
+from backend.app.security.api_keys import verify_api_key
+from backend.app.logging_config import get_logger
+
+logger = get_logger(__name__)
+
+# Security scheme
+bearer_scheme = HTTPBearer(auto_error=False)
+
+
+async def get_api_key_from_request(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+) -> Optional[str]:
+    """
+    Extract API key from request.
+
+    Supports:
+    - Authorization: Bearer <key>
+    - X-API-Key: <key>
+    """
+    # Try Authorization header first
+    if credentials and credentials.credentials:
+        return credentials.credentials
+
+    # Try X-API-Key header
+    x_api_key = request.headers.get("X-API-Key")
+    if x_api_key:
+        return x_api_key
+
+    return None
+
+
+async def authenticate_request(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    api_key_str: Optional[str] = Depends(get_api_key_from_request),
+) -> Tuple[User, ApiKey]:
+    """
+    Authenticate a request using API key.
+
+    Args:
+        request: The incoming request
+        db: Database session
+        api_key_str: API key from request
+
+    Returns:
+        Tuple of (User, ApiKey)
+
+    Raises:
+        HTTPException: If authentication fails
+    """
+    if not api_key_str:
+        logger.warning("missing_api_key", path=request.url.path)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing API key. Provide via 'Authorization: Bearer <key>' or 'X-API-Key: <key>'",
+        )
+
+    # Verify API key
+    api_key = await verify_api_key(db, api_key_str)
+
+    if not api_key:
+        logger.warning(
+            "invalid_api_key",
+            path=request.url.path,
+            key_prefix=api_key_str[:8] if len(api_key_str) >= 8 else "short",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key",
+        )
+
+    # Check key status
+    if api_key.status != ApiKeyStatus.ACTIVE:
+        logger.warning(
+            "inactive_api_key",
+            key_id=api_key.id,
+            status=api_key.status.value,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"API key is {api_key.status.value}",
+        )
+
+    # Check expiration
+    if api_key.expires_at and api_key.expires_at < datetime.now(timezone.utc):
+        logger.warning("expired_api_key", key_id=api_key.id)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API key has expired",
+        )
+
+    # Get user
+    user = api_key.user
+    if not user or not user.is_active or user.deleted_at:
+        logger.warning(
+            "inactive_user",
+            key_id=api_key.id,
+            user_id=user.id if user else None,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account is inactive",
+        )
+
+    # Update last used
+    await crud.update_api_key_usage(db, api_key.id)
+
+    return user, api_key
+
+
+async def require_role(
+    required_role: UserRole,
+    user: User = Depends(lambda u=Depends(authenticate_request): u[0]),
+) -> User:
+    """
+    Require a minimum role level.
+
+    Role hierarchy: admin > faculty > staff > student
+    """
+    role_hierarchy = {
+        UserRole.STUDENT: 0,
+        UserRole.STAFF: 1,
+        UserRole.FACULTY: 2,
+        UserRole.ADMIN: 3,
+    }
+
+    user_level = role_hierarchy.get(user.role, 0)
+    required_level = role_hierarchy.get(required_role, 0)
+
+    if user_level < required_level:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Requires {required_role.value} role or higher",
+        )
+
+    return user
+
+
+def require_admin():
+    """Dependency that requires admin role."""
+    async def check_admin(
+        auth_result: Tuple[User, ApiKey] = Depends(authenticate_request),
+    ) -> User:
+        user, _ = auth_result
+        if user.role != UserRole.ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin access required",
+            )
+        return user
+    return check_admin
+
+
+class AuthenticatedUser:
+    """Dependency class for getting authenticated user."""
+
+    def __init__(self, require_role: Optional[UserRole] = None):
+        self.require_role = require_role
+
+    async def __call__(
+        self,
+        auth_result: Tuple[User, ApiKey] = Depends(authenticate_request),
+    ) -> User:
+        user, _ = auth_result
+
+        if self.require_role:
+            role_hierarchy = {
+                UserRole.STUDENT: 0,
+                UserRole.STAFF: 1,
+                UserRole.FACULTY: 2,
+                UserRole.ADMIN: 3,
+            }
+            user_level = role_hierarchy.get(user.role, 0)
+            required_level = role_hierarchy.get(self.require_role, 0)
+
+            if user_level < required_level:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Requires {self.require_role.value} role or higher",
+                )
+
+        return user
+
+
+class AuthenticatedApiKey:
+    """Dependency class for getting authenticated API key."""
+
+    async def __call__(
+        self,
+        auth_result: Tuple[User, ApiKey] = Depends(authenticate_request),
+    ) -> ApiKey:
+        _, api_key = auth_result
+        return api_key
+
+
+# Convenience dependencies
+get_current_user = AuthenticatedUser()
+get_current_user_admin = AuthenticatedUser(require_role=UserRole.ADMIN)
+get_current_api_key = AuthenticatedApiKey()

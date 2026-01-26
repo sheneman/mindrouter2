@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}User Management - MindRouter2{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row">
+        <div class="col-md-2 sidebar bg-light py-3">
+            <h6 class="px-3 text-muted">Admin Menu</h6>
+            <ul class="nav flex-column">
+                <li class="nav-item"><a class="nav-link" href="/admin"><i class="bi bi-speedometer2"></i> Overview</a></li>
+                <li class="nav-item"><a class="nav-link" href="/admin/backends"><i class="bi bi-server"></i> Backends</a></li>
+                <li class="nav-item"><a class="nav-link active" href="/admin/users"><i class="bi bi-people"></i> Users</a></li>
+                <li class="nav-item"><a class="nav-link" href="/admin/requests"><i class="bi bi-inbox"></i> Requests</a></li>
+                <li class="nav-item"><a class="nav-link" href="/admin/audit"><i class="bi bi-journal-text"></i> Audit Log</a></li>
+            </ul>
+        </div>
+
+        <div class="col-md-10 py-3">
+            <h1 class="mb-4"><i class="bi bi-people"></i> User Management</h1>
+
+            <div class="card">
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Username</th>
+                                    <th>Email</th>
+                                    <th>Role</th>
+                                    <th>Status</th>
+                                    <th>Created</th>
+                                    <th>Last Login</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for u in users %}
+                                <tr>
+                                    <td>{{ u.username }}</td>
+                                    <td>{{ u.email }}</td>
+                                    <td><span class="badge bg-primary">{{ u.role.value }}</span></td>
+                                    <td>
+                                        <span class="badge {% if u.is_active %}bg-success{% else %}bg-secondary{% endif %}">
+                                            {{ 'Active' if u.is_active else 'Inactive' }}
+                                        </span>
+                                    </td>
+                                    <td>{{ u.created_at.strftime('%Y-%m-%d') }}</td>
+                                    <td>{{ u.last_login_at.strftime('%Y-%m-%d %H:%M') if u.last_login_at else 'Never' }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

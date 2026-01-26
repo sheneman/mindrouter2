@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Audit Log - MindRouter2{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row">
+        <div class="col-md-2 sidebar bg-light py-3">
+            <h6 class="px-3 text-muted">Admin Menu</h6>
+            <ul class="nav flex-column">
+                <li class="nav-item"><a class="nav-link" href="/admin"><i class="bi bi-speedometer2"></i> Overview</a></li>
+                <li class="nav-item"><a class="nav-link" href="/admin/backends"><i class="bi bi-server"></i> Backends</a></li>
+                <li class="nav-item"><a class="nav-link" href="/admin/users"><i class="bi bi-people"></i> Users</a></li>
+                <li class="nav-item"><a class="nav-link" href="/admin/requests"><i class="bi bi-inbox"></i> Requests</a></li>
+                <li class="nav-item"><a class="nav-link active" href="/admin/audit"><i class="bi bi-journal-text"></i> Audit Log</a></li>
+            </ul>
+        </div>
+
+        <div class="col-md-10 py-3">
+            <h1 class="mb-4"><i class="bi bi-journal-text"></i> Audit Log</h1>
+            <p class="text-muted">Showing {{ audit_requests|length }} of {{ total }} requests</p>
+
+            <div class="card">
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover table-sm">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Time</th>
+                                    <th>User</th>
+                                    <th>Model</th>
+                                    <th>Endpoint</th>
+                                    <th>Status</th>
+                                    <th>Tokens</th>
+                                    <th>Latency</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for req in audit_requests %}
+                                <tr>
+                                    <td><code>{{ req.request_uuid[:8] }}...</code></td>
+                                    <td>{{ req.created_at.strftime('%m-%d %H:%M:%S') }}</td>
+                                    <td>{{ req.user_id }}</td>
+                                    <td><span class="badge bg-secondary">{{ req.model }}</span></td>
+                                    <td>{{ req.endpoint }}</td>
+                                    <td>
+                                        <span class="badge {% if req.status.value == 'completed' %}bg-success{% elif req.status.value == 'failed' %}bg-danger{% else %}bg-warning{% endif %}">
+                                            {{ req.status.value }}
+                                        </span>
+                                    </td>
+                                    <td>{{ (req.prompt_tokens or 0) + (req.completion_tokens or 0) }}</td>
+                                    <td>{{ req.total_time_ms or 'N/A' }} ms</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

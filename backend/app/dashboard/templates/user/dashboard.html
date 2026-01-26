@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - MindRouter2{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1><i class="bi bi-speedometer"></i> Dashboard</h1>
+            <p class="text-muted">Welcome, {{ user.full_name or user.username }}</p>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-4 mb-3">
+            <div class="card card-stat primary h-100">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-2 text-muted">Role</h6>
+                    <h3 class="card-title mb-0">
+                        <span class="badge bg-primary">{{ user.role.value|title }}</span>
+                    </h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-3">
+            <div class="card card-stat {% if usage_percent >= 90 %}danger{% elif usage_percent >= 70 %}warning{% else %}success{% endif %} h-100">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-2 text-muted">Token Usage</h6>
+                    {% if quota %}
+                    <h3 class="card-title mb-1">{{ "{:,}".format(quota.tokens_used) }} / {{ "{:,}".format(quota.token_budget) }}</h3>
+                    <div class="progress" style="height: 6px;">
+                        <div class="progress-bar {% if usage_percent >= 90 %}bg-danger{% elif usage_percent >= 70 %}bg-warning{% else %}bg-success{% endif %}" role="progressbar" style="width: {{ usage_percent }}%"></div>
+                    </div>
+                    {% else %}
+                    <h3 class="card-title mb-0 text-muted">No quota set</h3>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-3">
+            <div class="card card-stat primary h-100">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-2 text-muted">Active API Keys</h6>
+                    <h3 class="card-title mb-0">{{ api_keys|selectattr('status.value', 'equalto', 'active')|list|length }}</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-key"></i> API Keys</span>
+                    <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createKeyModal">
+                        <i class="bi bi-plus"></i> Create New Key
+                    </button>
+                </div>
+                <div class="card-body">
+                    {% if api_keys %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Key Prefix</th>
+                                    <th>Status</th>
+                                    <th>Last Used</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for key in api_keys %}
+                                <tr>
+                                    <td>{{ key.name }}</td>
+                                    <td><code>{{ key.key_prefix }}...</code></td>
+                                    <td>
+                                        <span class="badge {% if key.status.value == 'active' %}bg-success{% else %}bg-secondary{% endif %}">
+                                            {{ key.status.value }}
+                                        </span>
+                                    </td>
+                                    <td>{{ key.last_used_at.strftime('%Y-%m-%d %H:%M') if key.last_used_at else 'Never' }}</td>
+                                    <td>
+                                        {% if key.status.value == 'active' %}
+                                        <form method="POST" action="/dashboard/revoke-key/{{ key.id }}" style="display: inline;">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Are you sure you want to revoke this key?')">
+                                                Revoke
+                                            </button>
+                                        </form>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="text-muted mb-0">No API keys yet. Create one to start using the API.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-info-circle"></i> Quota Details
+                </div>
+                <div class="card-body">
+                    {% if quota %}
+                    <dl class="row mb-0">
+                        <dt class="col-6">Budget:</dt>
+                        <dd class="col-6">{{ "{:,}".format(quota.token_budget) }} tokens</dd>
+                        <dt class="col-6">Used:</dt>
+                        <dd class="col-6">{{ "{:,}".format(quota.tokens_used) }} tokens</dd>
+                        <dt class="col-6">RPM Limit:</dt>
+                        <dd class="col-6">{{ quota.rpm_limit }} req/min</dd>
+                        <dt class="col-6">Max Concurrent:</dt>
+                        <dd class="col-6">{{ quota.max_concurrent }} requests</dd>
+                    </dl>
+                    <hr>
+                    <a href="/dashboard/request-quota" class="btn btn-outline-primary btn-sm">
+                        <i class="bi bi-arrow-up"></i> Request Quota Increase
+                    </a>
+                    {% else %}
+                    <p class="text-muted mb-0">No quota assigned. Please contact an administrator.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Key Modal -->
+<div class="modal fade" id="createKeyModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Create New API Key</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="/dashboard/create-key">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="key_name" class="form-label">Key Name</label>
+                        <input type="text" class="form-control" id="key_name" name="key_name" required placeholder="e.g., Development, Production">
+                        <div class="form-text">A descriptive name to identify this key.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Key</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

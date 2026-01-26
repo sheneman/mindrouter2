@@ -1,0 +1,193 @@
+############################################################
+#
+# mindrouter2 - LLM Inference Translator and Load Balancer
+#
+# openai_in.py: OpenAI API format to canonical schema translator
+#
+# Luke Sheneman
+# Research Computing and Data Services (RCDS)
+# Institute for Interdisciplinary Data Sciences (IIDS)
+# University of Idaho
+# sheneman@uidaho.edu
+#
+############################################################
+
+"""OpenAI API format to canonical schema translator."""
+
+from typing import Any, Dict, List, Optional, Union
+
+from backend.app.core.canonical_schemas import (
+    CanonicalChatRequest,
+    CanonicalCompletionRequest,
+    CanonicalEmbeddingRequest,
+    CanonicalMessage,
+    ContentBlock,
+    ImageBase64Content,
+    ImageUrlContent,
+    MessageRole,
+    ResponseFormat,
+    ResponseFormatType,
+    TextContent,
+)
+
+
+class OpenAIInTranslator:
+    """Translate OpenAI API requests to canonical format."""
+
+    @staticmethod
+    def translate_chat_request(data: Dict[str, Any]) -> CanonicalChatRequest:
+        """Translate OpenAI chat completion request to canonical format.
+
+        Args:
+            data: Raw request body from OpenAI-compatible endpoint
+
+        Returns:
+            CanonicalChatRequest
+        """
+        messages = []
+        for msg in data.get("messages", []):
+            messages.append(OpenAIInTranslator._translate_message(msg))
+
+        response_format = None
+        if "response_format" in data:
+            response_format = OpenAIInTranslator._translate_response_format(
+                data["response_format"]
+            )
+
+        return CanonicalChatRequest(
+            model=data["model"],
+            messages=messages,
+            temperature=data.get("temperature"),
+            top_p=data.get("top_p"),
+            max_tokens=data.get("max_tokens"),
+            stream=data.get("stream", False),
+            stop=data.get("stop"),
+            presence_penalty=data.get("presence_penalty"),
+            frequency_penalty=data.get("frequency_penalty"),
+            seed=data.get("seed"),
+            response_format=response_format,
+            n=data.get("n", 1),
+            user=data.get("user"),
+        )
+
+    @staticmethod
+    def translate_completion_request(data: Dict[str, Any]) -> CanonicalCompletionRequest:
+        """Translate OpenAI completion request to canonical format.
+
+        Args:
+            data: Raw request body from OpenAI-compatible endpoint
+
+        Returns:
+            CanonicalCompletionRequest
+        """
+        return CanonicalCompletionRequest(
+            model=data["model"],
+            prompt=data["prompt"],
+            temperature=data.get("temperature"),
+            top_p=data.get("top_p"),
+            max_tokens=data.get("max_tokens"),
+            stream=data.get("stream", False),
+            stop=data.get("stop"),
+            presence_penalty=data.get("presence_penalty"),
+            frequency_penalty=data.get("frequency_penalty"),
+            seed=data.get("seed"),
+            suffix=data.get("suffix"),
+            echo=data.get("echo", False),
+            n=data.get("n", 1),
+            best_of=data.get("best_of", 1),
+        )
+
+    @staticmethod
+    def translate_embedding_request(data: Dict[str, Any]) -> CanonicalEmbeddingRequest:
+        """Translate OpenAI embedding request to canonical format.
+
+        Args:
+            data: Raw request body from OpenAI-compatible endpoint
+
+        Returns:
+            CanonicalEmbeddingRequest
+        """
+        return CanonicalEmbeddingRequest(
+            model=data["model"],
+            input=data["input"],
+            encoding_format=data.get("encoding_format", "float"),
+            dimensions=data.get("dimensions"),
+        )
+
+    @staticmethod
+    def _translate_message(msg: Dict[str, Any]) -> CanonicalMessage:
+        """Translate a single message to canonical format."""
+        role = MessageRole(msg["role"])
+        content = msg.get("content")
+
+        # Handle multimodal content
+        if isinstance(content, list):
+            content_blocks: List[ContentBlock] = []
+            for item in content:
+                if isinstance(item, str):
+                    content_blocks.append(TextContent(text=item))
+                elif isinstance(item, dict):
+                    block = OpenAIInTranslator._translate_content_block(item)
+                    if block:
+                        content_blocks.append(block)
+            return CanonicalMessage(
+                role=role,
+                content=content_blocks,
+                name=msg.get("name"),
+            )
+
+        # Simple text content
+        return CanonicalMessage(
+            role=role,
+            content=content or "",
+            name=msg.get("name"),
+        )
+
+    @staticmethod
+    def _translate_content_block(item: Dict[str, Any]) -> Optional[ContentBlock]:
+        """Translate a content block to canonical format."""
+        item_type = item.get("type")
+
+        if item_type == "text":
+            return TextContent(text=item.get("text", ""))
+
+        elif item_type == "image_url":
+            image_url = item.get("image_url", {})
+            url = image_url.get("url", "")
+
+            # Check if it's a base64 data URL
+            if url.startswith("data:"):
+                # Parse data URL: data:image/png;base64,<data>
+                try:
+                    header, data = url.split(",", 1)
+                    media_type = header.split(":")[1].split(";")[0]
+                    return ImageBase64Content(data=data, media_type=media_type)
+                except (ValueError, IndexError):
+                    pass
+
+            return ImageUrlContent(
+                image_url={
+                    "url": url,
+                    "detail": image_url.get("detail", "auto"),
+                }
+            )
+
+        return None
+
+    @staticmethod
+    def _translate_response_format(
+        response_format: Dict[str, Any]
+    ) -> ResponseFormat:
+        """Translate response format specification."""
+        format_type = response_format.get("type", "text")
+
+        if format_type == "json_object":
+            return ResponseFormat(type=ResponseFormatType.JSON_OBJECT)
+
+        elif format_type == "json_schema":
+            return ResponseFormat(
+                type=ResponseFormatType.JSON_SCHEMA,
+                json_schema=response_format.get("json_schema"),
+            )
+
+        return ResponseFormat(type=ResponseFormatType.TEXT)

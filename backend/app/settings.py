@@ -1,0 +1,166 @@
+############################################################
+#
+# mindrouter2 - LLM Inference Translator and Load Balancer
+#
+# settings.py: Application configuration and environment settings
+#
+# Luke Sheneman
+# Research Computing and Data Services (RCDS)
+# Institute for Interdisciplinary Data Sciences (IIDS)
+# University of Idaho
+# sheneman@uidaho.edu
+#
+############################################################
+
+"""Application settings using Pydantic Settings."""
+
+from functools import lru_cache
+from typing import List, Optional
+
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """Application configuration loaded from environment variables."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    # Application
+    app_name: str = "MindRouter2"
+    app_version: str = "1.0.0"
+    debug: bool = False
+    reload: bool = False
+
+    # Database
+    database_url: str = Field(
+        default="mysql+pymysql://mindrouter:mindrouter_password@localhost:3306/mindrouter"
+    )
+    database_pool_size: int = 20
+    database_max_overflow: int = 10
+    database_echo: bool = False
+
+    # Redis (optional)
+    redis_url: Optional[str] = None
+
+    # Security
+    secret_key: str = Field(default="dev-secret-key-change-in-production")
+    jwt_algorithm: str = "HS256"
+    jwt_expiration_hours: int = 24
+    session_cookie_name: str = "mindrouter_session"
+    session_cookie_secure: bool = False
+    session_cookie_httponly: bool = True
+    session_cookie_samesite: str = "lax"
+    api_key_hash_algorithm: str = "argon2"
+
+    # Artifact Storage
+    artifact_storage_path: str = "/data/artifacts"
+    artifact_max_size_mb: int = 50
+    artifact_retention_days: int = 365
+
+    # Default Quotas - Students
+    default_token_budget_student: int = 100000
+    default_rpm_student: int = 30
+    default_max_concurrent_student: int = 2
+
+    # Default Quotas - Staff
+    default_token_budget_staff: int = 500000
+    default_rpm_staff: int = 60
+    default_max_concurrent_staff: int = 4
+
+    # Default Quotas - Faculty
+    default_token_budget_faculty: int = 1000000
+    default_rpm_faculty: int = 120
+    default_max_concurrent_faculty: int = 8
+
+    # Default Quotas - Admin
+    default_token_budget_admin: int = 10000000
+    default_rpm_admin: int = 1000
+    default_max_concurrent_admin: int = 50
+
+    # Scheduler Weights
+    scheduler_weight_student: int = 1
+    scheduler_weight_staff: int = 2
+    scheduler_weight_faculty: int = 3
+    scheduler_weight_admin: int = 10
+
+    # Scheduler Configuration
+    scheduler_fairness_window: int = 300  # seconds
+    scheduler_deprioritize_threshold: float = 0.5
+
+    # Scheduler Scoring
+    scheduler_score_model_loaded: int = 100
+    scheduler_score_low_utilization: int = 50
+    scheduler_score_short_queue: int = 30
+    scheduler_score_high_throughput: int = 20
+
+    # Backend Registry
+    backend_poll_interval: int = 30
+    backend_health_timeout: int = 5
+    backend_unhealthy_threshold: int = 3
+
+    # Request Handling
+    max_request_size: int = 52428800  # 50MB
+    backend_request_timeout: int = 300
+    backend_retry_attempts: int = 2
+    backend_retry_backoff: float = 1.0
+    structured_output_retry_on_invalid: bool = True
+
+    # Logging
+    log_level: str = "INFO"
+    log_format: str = "json"
+    log_file: Optional[str] = None
+
+    # Audit Logging
+    audit_log_enabled: bool = True
+    audit_log_prompts: bool = True
+    audit_log_responses: bool = True
+
+    # Observability
+    metrics_enabled: bool = True
+    metrics_prefix: str = "mindrouter"
+    otel_enabled: bool = False
+    otel_exporter_otlp_endpoint: Optional[str] = None
+
+    # CORS
+    cors_origins: List[str] = ["http://localhost:3000", "http://localhost:8000"]
+
+    # Tokenizer
+    default_tokenizer: str = "cl100k_base"
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v):
+        """Parse CORS origins from string or list."""
+        if isinstance(v, str):
+            import json
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError:
+                return [origin.strip() for origin in v.split(",")]
+        return v
+
+    def get_quota_defaults(self, role: str) -> dict:
+        """Get default quota settings for a role."""
+        role_lower = role.lower()
+        return {
+            "token_budget": getattr(self, f"default_token_budget_{role_lower}", 100000),
+            "rpm": getattr(self, f"default_rpm_{role_lower}", 30),
+            "max_concurrent": getattr(self, f"default_max_concurrent_{role_lower}", 2),
+        }
+
+    def get_scheduler_weight(self, role: str) -> int:
+        """Get scheduler weight for a role."""
+        role_lower = role.lower()
+        return getattr(self, f"scheduler_weight_{role_lower}", 1)
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """Get cached settings instance."""
+    return Settings()

@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Dashboard - MindRouter2{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row">
+        <!-- Sidebar -->
+        <div class="col-md-2 sidebar bg-light py-3">
+            <h6 class="px-3 text-muted">Admin Menu</h6>
+            <ul class="nav flex-column">
+                <li class="nav-item">
+                    <a class="nav-link active" href="/admin">
+                        <i class="bi bi-speedometer2"></i> Overview
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/admin/backends">
+                        <i class="bi bi-server"></i> Backends
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/admin/users">
+                        <i class="bi bi-people"></i> Users
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/admin/requests">
+                        <i class="bi bi-inbox"></i> Requests
+                        {% if pending_requests %}
+                        <span class="badge bg-danger">{{ pending_requests|length }}</span>
+                        {% endif %}
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/admin/audit">
+                        <i class="bi bi-journal-text"></i> Audit Log
+                    </a>
+                </li>
+            </ul>
+        </div>
+
+        <!-- Main Content -->
+        <div class="col-md-10 py-3">
+            <h1 class="mb-4"><i class="bi bi-gear"></i> Admin Dashboard</h1>
+
+            <div class="row mb-4">
+                <div class="col-md-3 mb-3">
+                    <div class="card card-stat success h-100">
+                        <div class="card-body">
+                            <h6 class="card-subtitle mb-2 text-muted">Healthy Backends</h6>
+                            <h2 class="card-title mb-0">{{ backends|selectattr('status.value', 'equalto', 'healthy')|list|length }} / {{ backends|length }}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <div class="card card-stat warning h-100">
+                        <div class="card-body">
+                            <h6 class="card-subtitle mb-2 text-muted">Queue Size</h6>
+                            <h2 class="card-title mb-0">{{ scheduler_stats.queue.total if scheduler_stats else 0 }}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <div class="card card-stat primary h-100">
+                        <div class="card-body">
+                            <h6 class="card-subtitle mb-2 text-muted">Active Users</h6>
+                            <h2 class="card-title mb-0">{{ scheduler_stats.fair_share.total_users if scheduler_stats else 0 }}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <div class="card card-stat danger h-100">
+                        <div class="card-body">
+                            <h6 class="card-subtitle mb-2 text-muted">Pending Requests</h6>
+                            <h2 class="card-title mb-0">{{ pending_requests|length }}</h2>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-8">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <i class="bi bi-server"></i> Backend Status
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>Engine</th>
+                                            <th>Status</th>
+                                            <th>Concurrent</th>
+                                            <th>Last Check</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for backend in backends %}
+                                        <tr>
+                                            <td>{{ backend.name }}</td>
+                                            <td><span class="badge bg-secondary">{{ backend.engine.value }}</span></td>
+                                            <td>
+                                                <span class="badge {% if backend.status.value == 'healthy' %}bg-success{% elif backend.status.value == 'unhealthy' %}bg-danger{% else %}bg-secondary{% endif %}">
+                                                    {{ backend.status.value }}
+                                                </span>
+                                            </td>
+                                            <td>{{ backend.current_concurrent }} / {{ backend.max_concurrent }}</td>
+                                            <td>{{ backend.last_health_check.strftime('%H:%M:%S') if backend.last_health_check else 'Never' }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <i class="bi bi-inbox"></i> Pending Requests
+                        </div>
+                        <div class="card-body">
+                            {% if pending_requests %}
+                            <ul class="list-group list-group-flush">
+                                {% for req in pending_requests[:5] %}
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong>{{ req.requester_name or 'User #' ~ req.user_id }}</strong><br>
+                                        <small class="text-muted">{{ req.request_type }}</small>
+                                    </div>
+                                    <a href="/admin/requests" class="btn btn-sm btn-outline-primary">Review</a>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                            {% if pending_requests|length > 5 %}
+                            <div class="text-center mt-2">
+                                <a href="/admin/requests">View all {{ pending_requests|length }} requests</a>
+                            </div>
+                            {% endif %}
+                            {% else %}
+                            <p class="text-muted mb-0">No pending requests.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
