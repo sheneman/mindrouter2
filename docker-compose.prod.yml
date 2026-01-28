@@ -8,8 +8,8 @@ services:
     env_file:
       - .env.prod
     volumes:
-      - artifact_data:/data/artifacts
-      - app_logs:/var/log/mindrouter
+      - /opt/mindrouter2/artifacts:/data/artifacts
+      - /opt/mindrouter2/logs:/var/log/mindrouter
     depends_on:
       mariadb:
         condition: service_healthy
@@ -61,8 +61,6 @@ services:
 volumes:
   mariadb_data:
   redis_data:
-  artifact_data:
-  app_logs:
 
 networks:
   mindrouter_network:
