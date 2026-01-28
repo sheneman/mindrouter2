@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:8000:8000"  # Only bind to localhost - Apache will proxy
+    env_file:
+      - .env.prod
+    volumes:
+      - artifact_data:/data/artifacts
+      - app_logs:/var/log/mindrouter
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - mindrouter_network
+
+  mariadb:
+    image: mariadb:11.2
+    env_file:
+      - .env.prod
+    volumes:
+      - mariadb_data:/var/lib/mysql
+      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - mindrouter_network
+    # No external port exposure in production
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-changeme}
+    networks:
+      - mindrouter_network
+    # No external port exposure in production
+
+volumes:
+  mariadb_data:
+  redis_data:
+  artifact_data:
+  app_logs:
+
+networks:
+  mindrouter_network:
+    driver: bridge
