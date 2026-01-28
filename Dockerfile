@@ -14,8 +14,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     default-libmysqlclient-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Create app user
-RUN useradd --create-home --shell /bin/bash appuser
+# Create app user with explicit UID for predictable bind mount permissions
+RUN useradd --create-home --shell /bin/bash --uid 1000 appuser
 
 # Set work directory
 WORKDIR /app
