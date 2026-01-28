@@ -15,7 +15,7 @@
 """Health check and metrics endpoints."""
 
 from datetime import datetime, timezone
-from typing import Dict
+from typing import Any, Dict
 
 from fastapi import APIRouter, Response
 from prometheus_client import (
@@ -70,7 +70,7 @@ async def liveness_probe() -> Dict[str, str]:
 
 
 @router.get("/readyz")
-async def readiness_probe() -> Dict[str, any]:
+async def readiness_probe() -> Dict[str, Any]:
     """
     Readiness probe - checks if the application is ready to serve traffic.
 
@@ -134,7 +134,7 @@ async def prometheus_metrics() -> Response:
 
 
 @router.get("/status")
-async def cluster_status() -> Dict[str, any]:
+async def cluster_status() -> Dict[str, Any]:
     """
     Get cluster status summary.
 
