@@ -30,6 +30,6 @@ api_router.include_router(health_router)
 api_router.include_router(openai_router)
 api_router.include_router(ollama_router)
 api_router.include_router(models_router)
-api_router.include_router(admin_router, prefix="/admin", tags=["admin"])
+api_router.include_router(admin_router, prefix="/api/admin", tags=["admin"])
 
 __all__ = ["api_router"]
