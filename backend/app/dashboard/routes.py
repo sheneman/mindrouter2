@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.scheduler.policy import get_scheduler
 from backend.app.core.telemetry.registry import get_registry
 from backend.app.db import crud
-from backend.app.db.models import QuotaRequestStatus, UserRole
+from backend.app.db.models import BackendEngine, QuotaRequestStatus, UserRole
 from backend.app.db.session import get_async_db
 from backend.app.security import generate_api_key, hash_password, verify_password
 from backend.app.settings import get_settings
@@ -468,6 +468,8 @@ async def deny_request(
 @dashboard_router.get("/admin/backends", response_class=HTMLResponse)
 async def admin_backends(
     request: Request,
+    success: Optional[str] = None,
+    error: Optional[str] = None,
     db: AsyncSession = Depends(get_async_db),
 ):
     """Admin backend management."""
@@ -495,8 +497,120 @@ async def admin_backends(
 
     return templates.TemplateResponse(
         "admin/backends.html",
-        {"request": request, "user": user, "backends": backend_data},
+        {
+            "request": request,
+            "user": user,
+            "backends": backend_data,
+            "success": success,
+            "error": error,
+        },
     )
+
+
+@dashboard_router.post("/admin/backends/register")
+async def register_backend(
+    request: Request,
+    name: str = Form(...),
+    url: str = Form(...),
+    engine: str = Form(...),
+    max_concurrent: int = Form(4),
+    gpu_memory_gb: Optional[str] = Form(None),
+    gpu_type: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Register a new backend."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or user.role != UserRole.ADMIN:
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    try:
+        engine_enum = BackendEngine(engine)
+        gpu_mem = float(gpu_memory_gb) if gpu_memory_gb else None
+        gpu_type_val = gpu_type if gpu_type else None
+
+        # Check for duplicate name
+        existing = await crud.get_backend_by_name(db, name)
+        if existing:
+            return RedirectResponse(
+                url="/admin/backends?error=Backend+name+already+exists", status_code=302
+            )
+
+        registry = get_registry()
+        await registry.register_backend(
+            name=name,
+            url=url,
+            engine=engine_enum,
+            max_concurrent=max_concurrent,
+            gpu_memory_gb=gpu_mem,
+            gpu_type=gpu_type_val,
+        )
+        return RedirectResponse(url="/admin/backends?success=registered", status_code=302)
+    except Exception as e:
+        return RedirectResponse(url="/admin/backends?error=Registration+failed", status_code=302)
+
+
+@dashboard_router.post("/admin/backends/{backend_id}/disable")
+async def disable_backend(
+    request: Request,
+    backend_id: int,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Disable a backend."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or user.role != UserRole.ADMIN:
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    registry = get_registry()
+    await registry.disable_backend(backend_id)
+    return RedirectResponse(url="/admin/backends?success=disabled", status_code=302)
+
+
+@dashboard_router.post("/admin/backends/{backend_id}/enable")
+async def enable_backend(
+    request: Request,
+    backend_id: int,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Enable a backend."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or user.role != UserRole.ADMIN:
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    registry = get_registry()
+    await registry.enable_backend(backend_id)
+    return RedirectResponse(url="/admin/backends?success=enabled", status_code=302)
+
+
+@dashboard_router.post("/admin/backends/{backend_id}/refresh")
+async def refresh_backend(
+    request: Request,
+    backend_id: int,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Refresh backend capabilities."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or user.role != UserRole.ADMIN:
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    registry = get_registry()
+    await registry.refresh_backend(backend_id)
+    return RedirectResponse(url="/admin/backends?success=refreshed", status_code=302)
 
 
 @dashboard_router.get("/admin/audit", response_class=HTMLResponse)

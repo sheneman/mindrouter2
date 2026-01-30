@@ -31,17 +31,107 @@
         <div class="col-md-10 py-3">
             <h1 class="mb-4"><i class="bi bi-server"></i> Backend Management</h1>
 
+            {% if success %}
+            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                <i class="bi bi-check-circle"></i>
+                {% if success == 'registered' %}Backend registered successfully.
+                {% elif success == 'disabled' %}Backend disabled.
+                {% elif success == 'enabled' %}Backend enabled.
+                {% elif success == 'refreshed' %}Backend capabilities refreshed.
+                {% else %}Operation completed successfully.{% endif %}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            {% endif %}
+            {% if error %}
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <i class="bi bi-exclamation-triangle"></i> {{ error }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            {% endif %}
+
+            <!-- Register New Backend -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-plus-circle"></i> Register New Backend
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="/admin/backends/register">
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label for="name" class="form-label">Name</label>
+                                <input type="text" class="form-control" id="name" name="name" required
+                                       placeholder="e.g., gpu-server-1">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="url" class="form-label">URL</label>
+                                <input type="text" class="form-control" id="url" name="url" required
+                                       placeholder="http://host:port">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="engine" class="form-label">Engine</label>
+                                <select class="form-select" id="engine" name="engine" required>
+                                    <option value="ollama">Ollama</option>
+                                    <option value="vllm">vLLM</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label for="max_concurrent" class="form-label">Max Concurrent</label>
+                                <input type="number" class="form-control" id="max_concurrent" name="max_concurrent"
+                                       value="4" min="1">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="gpu_memory_gb" class="form-label">GPU Memory (GB)</label>
+                                <input type="number" class="form-control" id="gpu_memory_gb" name="gpu_memory_gb"
+                                       step="0.1" placeholder="Optional">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="gpu_type" class="form-label">GPU Type</label>
+                                <input type="text" class="form-control" id="gpu_type" name="gpu_type"
+                                       placeholder="e.g., NVIDIA A100">
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-plus-lg"></i> Register Backend
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Registered Backends -->
+            {% if backends %}
             {% for item in backends %}
             <div class="card mb-4">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <span>
                         <strong>{{ item.backend.name }}</strong>
-                        <span class="badge {% if item.backend.status.value == 'healthy' %}bg-success{% elif item.backend.status.value == 'unhealthy' %}bg-danger{% else %}bg-secondary{% endif %} ms-2">
+                        <span class="badge {% if item.backend.status.value == 'healthy' %}bg-success{% elif item.backend.status.value == 'unhealthy' %}bg-danger{% elif item.backend.status.value == 'disabled' %}bg-warning text-dark{% else %}bg-secondary{% endif %} ms-2">
                             {{ item.backend.status.value }}
                         </span>
                         <span class="badge bg-info ms-1">{{ item.backend.engine.value }}</span>
                     </span>
-                    <span class="text-muted">{{ item.backend.url }}</span>
+                    <span>
+                        <span class="text-muted me-3">{{ item.backend.url }}</span>
+                        <form method="POST" action="/admin/backends/{{ item.backend.id }}/refresh" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-primary" title="Refresh capabilities">
+                                <i class="bi bi-arrow-clockwise"></i> Refresh
+                            </button>
+                        </form>
+                        {% if item.backend.status.value == 'disabled' %}
+                        <form method="POST" action="/admin/backends/{{ item.backend.id }}/enable" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-success" title="Enable backend">
+                                <i class="bi bi-play-circle"></i> Enable
+                            </button>
+                        </form>
+                        {% else %}
+                        <form method="POST" action="/admin/backends/{{ item.backend.id }}/disable" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-warning" title="Disable backend">
+                                <i class="bi bi-pause-circle"></i> Disable
+                            </button>
+                        </form>
+                        {% endif %}
+                    </span>
                 </div>
                 <div class="card-body">
                     <div class="row">
@@ -99,6 +189,11 @@
                 </div>
             </div>
             {% endfor %}
+            {% else %}
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle"></i> No backends registered. Use the form above to register your first Ollama or vLLM backend.
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>
