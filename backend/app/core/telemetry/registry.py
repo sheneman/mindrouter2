@@ -132,17 +132,17 @@ class BackendRegistry:
             adapter = self._create_adapter(backend)
             self._adapters[backend.id] = adapter
 
-            # Initial discovery
-            await self._discover_backend(backend.id)
+        # Run discovery outside the lock to avoid blocking telemetry reads
+        await self._discover_backend(backend.id)
 
-            logger.info(
-                "backend_registered",
-                backend_id=backend.id,
-                name=name,
-                engine=engine.value,
-            )
+        logger.info(
+            "backend_registered",
+            backend_id=backend.id,
+            name=name,
+            engine=engine.value,
+        )
 
-            return backend
+        return backend
 
     async def refresh_backend(self, backend_id: int) -> bool:
         """
