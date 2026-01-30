@@ -37,6 +37,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.db.base import Base, TimestampMixin, SoftDeleteMixin
 
+# Use enum values (lowercase) for database storage, not enum names (uppercase)
+_enum_values = lambda obj: [e.value for e in obj]
+
 
 # Enums
 class UserRole(str, PyEnum):
@@ -107,7 +110,7 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     role: Mapped[UserRole] = mapped_column(
-        Enum(UserRole), nullable=False, default=UserRole.STUDENT
+        Enum(UserRole, values_callable=_enum_values), nullable=False, default=UserRole.STUDENT
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -137,7 +140,7 @@ class ApiKey(Base, TimestampMixin):
     key_prefix: Mapped[str] = mapped_column(String(12), nullable=False)  # First 8 chars for identification
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     status: Mapped[ApiKeyStatus] = mapped_column(
-        Enum(ApiKeyStatus), nullable=False, default=ApiKeyStatus.ACTIVE
+        Enum(ApiKeyStatus, values_callable=_enum_values), nullable=False, default=ApiKeyStatus.ACTIVE
     )
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -204,7 +207,7 @@ class QuotaRequest(Base, TimestampMixin):
     requested_rpm: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     status: Mapped[QuotaRequestStatus] = mapped_column(
-        Enum(QuotaRequestStatus), nullable=False, default=QuotaRequestStatus.PENDING
+        Enum(QuotaRequestStatus, values_callable=_enum_values), nullable=False, default=QuotaRequestStatus.PENDING
     )
 
     # Admin review
@@ -258,9 +261,9 @@ class Backend(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     url: Mapped[str] = mapped_column(String(500), nullable=False)
-    engine: Mapped[BackendEngine] = mapped_column(Enum(BackendEngine), nullable=False)
+    engine: Mapped[BackendEngine] = mapped_column(Enum(BackendEngine, values_callable=_enum_values), nullable=False)
     status: Mapped[BackendStatus] = mapped_column(
-        Enum(BackendStatus), nullable=False, default=BackendStatus.UNKNOWN
+        Enum(BackendStatus, values_callable=_enum_values), nullable=False, default=BackendStatus.UNKNOWN
     )
 
     # Capabilities
@@ -335,7 +338,7 @@ class Model(Base, TimestampMixin):
     family: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # llama, mistral, etc.
 
     # Capabilities
-    modality: Mapped[Modality] = mapped_column(Enum(Modality), nullable=False, default=Modality.CHAT)
+    modality: Mapped[Modality] = mapped_column(Enum(Modality, values_callable=_enum_values), nullable=False, default=Modality.CHAT)
     context_length: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     supports_vision: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     supports_structured_output: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -375,7 +378,7 @@ class Request(Base, TimestampMixin):
     # Request details
     endpoint: Mapped[str] = mapped_column(String(100), nullable=False)  # /v1/chat/completions
     model: Mapped[str] = mapped_column(String(200), nullable=False)
-    modality: Mapped[Modality] = mapped_column(Enum(Modality), nullable=False)
+    modality: Mapped[Modality] = mapped_column(Enum(Modality, values_callable=_enum_values), nullable=False)
     is_streaming: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Request content (stored for audit)
@@ -386,7 +389,7 @@ class Request(Base, TimestampMixin):
 
     # Scheduling metadata
     status: Mapped[RequestStatus] = mapped_column(
-        Enum(RequestStatus), nullable=False, default=RequestStatus.QUEUED
+        Enum(RequestStatus, values_callable=_enum_values), nullable=False, default=RequestStatus.QUEUED
     )
     backend_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("backends.id"), nullable=True)
     queue_position: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
