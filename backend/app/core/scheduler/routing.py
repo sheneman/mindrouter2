@@ -244,7 +244,8 @@ class BackendRouter:
         # Update fair-share
         await self.fair_share.on_job_completed(job, tokens_used)
 
-        # Decrement queue depth
+        # Remove job from queue and decrement queue depth
+        await self.queue.cancel_job(job.request_id)
         async with self._lock:
             if backend_id in self._backend_queue_depths:
                 self._backend_queue_depths[backend_id] = max(
@@ -266,7 +267,8 @@ class BackendRouter:
             job: The failed job
             backend_id: Backend that attempted the job
         """
-        # Decrement queue depth
+        # Remove job from queue and decrement queue depth
+        await self.queue.cancel_job(job.request_id)
         async with self._lock:
             if backend_id in self._backend_queue_depths:
                 self._backend_queue_depths[backend_id] = max(

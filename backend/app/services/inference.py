@@ -312,7 +312,11 @@ class InferenceService:
         http_request: Request,
     ) -> Dict[str, Any]:
         """Handle Ollama generate request (non-streaming)."""
-        return await self.ollama_chat(request, user, api_key, http_request)
+        result = await self.ollama_chat(request, user, api_key, http_request)
+        # Convert chat format (message) to generate format (response)
+        msg = result.pop("message", {})
+        result["response"] = msg.get("content", "")
+        return result
 
     async def ollama_embedding(
         self,
@@ -414,11 +418,16 @@ class InferenceService:
 
         # Submit to scheduler and route
         await self._scheduler.submit_job(job, user.role.value)
-        decision = await self._scheduler.route_job(
-            job, backends, backend_models, gpu_utilizations
-        )
+        try:
+            decision = await self._scheduler.route_job(
+                job, backends, backend_models, gpu_utilizations
+            )
+        except Exception:
+            await self._scheduler.cancel_job(job.request_id)
+            raise
 
         if not decision.success:
+            await self._scheduler.cancel_job(job.request_id)
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=f"No suitable backend: {decision.reason}",
@@ -538,7 +547,37 @@ class InferenceService:
 
         response = await client.post(url, json=payload)
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+
+        # Convert OpenAI format to Ollama format when backend is not Ollama
+        if backend.engine != BackendEngine.OLLAMA:
+            data = self._openai_response_to_ollama(data)
+
+        return data
+
+    def _openai_response_to_ollama(self, openai_response: Dict) -> Dict:
+        """Convert a non-streaming OpenAI response to Ollama format."""
+        choices = openai_response.get("choices", [])
+        message = {"role": "assistant", "content": ""}
+        finish_reason = "stop"
+        if choices:
+            msg = choices[0].get("message", {})
+            message = {
+                "role": msg.get("role", "assistant"),
+                "content": msg.get("content") or "",
+            }
+            finish_reason = choices[0].get("finish_reason", "stop")
+
+        usage = openai_response.get("usage", {})
+        return {
+            "model": openai_response.get("model", ""),
+            "message": message,
+            "done": True,
+            "done_reason": finish_reason,
+            "total_duration": 0,
+            "prompt_eval_count": usage.get("prompt_tokens", 0),
+            "eval_count": usage.get("completion_tokens", 0),
+        }
 
     async def _proxy_ollama_stream(
         self,

@@ -175,7 +175,7 @@ class VLLMOutTranslator:
             message_data = choice_data.get("message", {})
             message = CanonicalMessage(
                 role=MessageRole(message_data.get("role", "assistant")),
-                content=message_data.get("content", ""),
+                content=message_data.get("content") or "",
             )
             choices.append(
                 CanonicalChoice(
