@@ -170,6 +170,26 @@ class BackendRegistry:
             )
             return backend is not None
 
+    async def remove_backend(self, backend_id: int) -> bool:
+        """Remove a backend entirely (unregister)."""
+        async with self._lock:
+            # Close and remove adapter
+            adapter = self._adapters.pop(backend_id, None)
+            if adapter:
+                await adapter.close()
+
+            # Remove cached capabilities and telemetry
+            self._capabilities.pop(backend_id, None)
+            self._telemetry.pop(backend_id, None)
+
+        # Delete from database
+        async with get_async_db_context() as db:
+            deleted = await crud.delete_backend(db=db, backend_id=backend_id)
+
+        if deleted:
+            logger.info("backend_removed", backend_id=backend_id)
+        return deleted
+
     async def enable_backend(self, backend_id: int) -> bool:
         """Enable a previously disabled backend."""
         async with get_async_db_context() as db:
@@ -312,6 +332,9 @@ class BackendRegistry:
 
             # Get telemetry if healthy
             if health.is_healthy:
+                # Auto-discover if no capabilities stored yet
+                if backend_id not in self._capabilities:
+                    await self._discover_backend(backend_id)
                 await self._collect_telemetry(backend_id)
 
         except Exception as e:

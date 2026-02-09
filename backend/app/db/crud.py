@@ -44,6 +44,13 @@ from backend.app.db.models import (
 )
 
 
+def _ensure_aware(dt: Optional[datetime]) -> Optional[datetime]:
+    """Ensure a datetime is timezone-aware (MariaDB returns naive datetimes)."""
+    if dt is not None and dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 # User CRUD
 async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[User]:
     """Get user by ID."""
@@ -219,7 +226,7 @@ async def reset_quota_if_needed(db: AsyncSession, user_id: int) -> Optional[Quot
     result = await db.execute(select(Quota).where(Quota.user_id == user_id))
     quota = result.scalar_one_or_none()
     if quota:
-        period_end = quota.budget_period_start + timedelta(days=quota.budget_period_days)
+        period_end = _ensure_aware(quota.budget_period_start) + timedelta(days=quota.budget_period_days)
         if datetime.now(timezone.utc) >= period_end:
             quota.budget_period_start = datetime.now(timezone.utc)
             quota.tokens_used = 0
@@ -308,6 +315,25 @@ async def update_backend_status(
             backend.consecutive_failures += 1
         await db.flush()
     return backend
+
+
+async def delete_backend(db: AsyncSession, backend_id: int) -> bool:
+    """Delete a backend and its associated models."""
+    # Delete associated models first
+    models_result = await db.execute(
+        select(Model).where(Model.backend_id == backend_id)
+    )
+    for model in models_result.scalars().all():
+        await db.delete(model)
+
+    # Delete the backend
+    result = await db.execute(select(Backend).where(Backend.id == backend_id))
+    backend = result.scalar_one_or_none()
+    if backend:
+        await db.delete(backend)
+        await db.flush()
+        return True
+    return False
 
 
 async def update_backend_concurrency(
@@ -458,7 +484,7 @@ async def update_request_started(
         request.status = RequestStatus.PROCESSING
         request.backend_id = backend_id
         request.started_at = datetime.now(timezone.utc)
-        queue_delay = request.started_at - request.queued_at
+        queue_delay = request.started_at - _ensure_aware(request.queued_at)
         request.queue_delay_ms = int(queue_delay.total_seconds() * 1000)
         await db.flush()
     return request
@@ -478,9 +504,9 @@ async def update_request_completed(
         request.status = RequestStatus.COMPLETED
         request.completed_at = datetime.now(timezone.utc)
         if request.started_at:
-            processing_time = request.completed_at - request.started_at
+            processing_time = request.completed_at - _ensure_aware(request.started_at)
             request.processing_time_ms = int(processing_time.total_seconds() * 1000)
-        total_time = request.completed_at - request.queued_at
+        total_time = request.completed_at - _ensure_aware(request.queued_at)
         request.total_time_ms = int(total_time.total_seconds() * 1000)
         request.prompt_tokens = prompt_tokens
         request.completion_tokens = completion_tokens
@@ -503,9 +529,9 @@ async def update_request_failed(
         request.error_message = error_message
         request.error_code = error_code
         if request.started_at:
-            processing_time = request.completed_at - request.started_at
+            processing_time = request.completed_at - _ensure_aware(request.started_at)
             request.processing_time_ms = int(processing_time.total_seconds() * 1000)
-        total_time = request.completed_at - request.queued_at
+        total_time = request.completed_at - _ensure_aware(request.queued_at)
         request.total_time_ms = int(total_time.total_seconds() * 1000)
         await db.flush()
     return request

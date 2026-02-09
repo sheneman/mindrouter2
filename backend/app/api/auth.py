@@ -108,8 +108,11 @@ async def authenticate_request(
             detail=f"API key is {api_key.status.value}",
         )
 
-    # Check expiration
-    if api_key.expires_at and api_key.expires_at < datetime.now(timezone.utc):
+    # Check expiration (MariaDB returns naive datetimes)
+    expires_at = api_key.expires_at
+    if expires_at and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at and expires_at < datetime.now(timezone.utc):
         logger.warning("expired_api_key", key_id=api_key.id)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

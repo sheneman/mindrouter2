@@ -38,6 +38,7 @@
                 {% elif success == 'disabled' %}Backend disabled.
                 {% elif success == 'enabled' %}Backend enabled.
                 {% elif success == 'refreshed' %}Backend capabilities refreshed.
+                {% elif success == 'removed' %}Backend removed successfully.
                 {% else %}Operation completed successfully.{% endif %}
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
@@ -131,6 +132,12 @@
                             </button>
                         </form>
                         {% endif %}
+                        <form method="POST" action="/admin/backends/{{ item.backend.id }}/remove" class="d-inline"
+                              onsubmit="return confirm('Remove backend {{ item.backend.name }}? This will delete all associated model records.')">
+                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Remove backend">
+                                <i class="bi bi-trash"></i> Remove
+                            </button>
+                        </form>
                     </span>
                 </div>
                 <div class="card-body">

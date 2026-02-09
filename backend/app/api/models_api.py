@@ -15,7 +15,7 @@
 """Models listing API endpoint."""
 
 import time
-from typing import List
+from typing import List, Tuple
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.api.auth import authenticate_request
 from backend.app.core.canonical_schemas import CanonicalModelInfo, CanonicalModelList
 from backend.app.core.telemetry.registry import get_registry
+from backend.app.db.models import ApiKey, User
 from backend.app.db.session import get_async_db
 
 router = APIRouter(tags=["models"])
@@ -32,14 +33,14 @@ router = APIRouter(tags=["models"])
 async def list_models(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
+    auth: Tuple[User, ApiKey] = Depends(authenticate_request),
 ) -> CanonicalModelList:
     """
     List available models (OpenAI-compatible).
 
     Returns all models available across healthy backends.
     """
-    # Authenticate
-    user, api_key = await authenticate_request(request, db)
+    user, api_key = auth
 
     registry = get_registry()
     backends = await registry.get_healthy_backends()

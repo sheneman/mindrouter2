@@ -593,6 +593,29 @@ async def enable_backend(
     return RedirectResponse(url="/admin/backends?success=enabled", status_code=302)
 
 
+@dashboard_router.post("/admin/backends/{backend_id}/remove")
+async def remove_backend(
+    request: Request,
+    backend_id: int,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Remove/unregister a backend."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or user.role != UserRole.ADMIN:
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    registry = get_registry()
+    removed = await registry.remove_backend(backend_id)
+    if removed:
+        return RedirectResponse(url="/admin/backends?success=removed", status_code=302)
+    else:
+        return RedirectResponse(url="/admin/backends?error=Backend+not+found", status_code=302)
+
+
 @dashboard_router.post("/admin/backends/{backend_id}/refresh")
 async def refresh_backend(
     request: Request,

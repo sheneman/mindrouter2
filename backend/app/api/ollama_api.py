@@ -15,7 +15,7 @@
 """Ollama-compatible API endpoints."""
 
 import uuid
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.auth import authenticate_request
 from backend.app.core.translators import OllamaInTranslator
+from backend.app.db.models import ApiKey, User
 from backend.app.db.session import get_async_db
 from backend.app.logging_config import bind_request_context, get_logger
 from backend.app.services.inference import InferenceService
@@ -36,6 +37,7 @@ router = APIRouter(prefix="/api", tags=["ollama"])
 async def ollama_chat(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
+    auth: Tuple[User, ApiKey] = Depends(authenticate_request),
 ):
     """
     Ollama-compatible /api/chat endpoint.
@@ -46,7 +48,7 @@ async def ollama_chat(
     - Images via base64
     - Format parameter for JSON mode
     """
-    user, api_key = await authenticate_request(request, db)
+    user, api_key = auth
 
     try:
         body = await request.json()
@@ -93,13 +95,14 @@ async def ollama_chat(
 async def ollama_generate(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
+    auth: Tuple[User, ApiKey] = Depends(authenticate_request),
 ):
     """
     Ollama-compatible /api/generate endpoint.
 
     For text completion (non-chat) style requests.
     """
-    user, api_key = await authenticate_request(request, db)
+    user, api_key = auth
 
     try:
         body = await request.json()
@@ -146,13 +149,14 @@ async def ollama_generate(
 async def ollama_tags(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
+    auth: Tuple[User, ApiKey] = Depends(authenticate_request),
 ):
     """
     Ollama-compatible /api/tags endpoint.
 
     Lists available models in Ollama format.
     """
-    user, api_key = await authenticate_request(request, db)
+    user, api_key = auth
 
     registry = get_registry()
     backends = await registry.get_healthy_backends()
@@ -188,11 +192,12 @@ async def ollama_tags(
 async def ollama_embeddings(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
+    auth: Tuple[User, ApiKey] = Depends(authenticate_request),
 ):
     """
     Ollama-compatible /api/embeddings endpoint.
     """
-    user, api_key = await authenticate_request(request, db)
+    user, api_key = auth
 
     try:
         body = await request.json()

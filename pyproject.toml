@@ -95,6 +95,9 @@ filterwarnings = [
     "ignore::DeprecationWarning",
 ]
 addopts = "-v --tb=short"
+markers = [
+    "integration: tests that hit real backend services (Ollama, vLLM)",
+]
 
 [tool.coverage.run]
 source = ["backend/app"]

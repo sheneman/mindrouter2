@@ -17,7 +17,7 @@
 import json
 import time
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
@@ -45,6 +45,7 @@ router = APIRouter(prefix="/v1", tags=["openai"])
 async def chat_completions(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
+    auth: Tuple[User, ApiKey] = Depends(authenticate_request),
 ):
     """
     OpenAI-compatible chat completions endpoint.
@@ -55,8 +56,7 @@ async def chat_completions(
     - Vision/multimodal inputs
     - Structured outputs (JSON mode, JSON schema)
     """
-    # Authenticate
-    user, api_key = await authenticate_request(request, db)
+    user, api_key = auth
 
     # Parse request body
     try:
@@ -107,14 +107,14 @@ async def chat_completions(
 async def completions(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
+    auth: Tuple[User, ApiKey] = Depends(authenticate_request),
 ):
     """
     OpenAI-compatible text completions endpoint (legacy).
 
     Internally converts to chat format for processing.
     """
-    # Authenticate
-    user, api_key = await authenticate_request(request, db)
+    user, api_key = auth
 
     try:
         body = await request.json()
@@ -164,11 +164,12 @@ async def completions(
 async def embeddings(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
+    auth: Tuple[User, ApiKey] = Depends(authenticate_request),
 ):
     """
     OpenAI-compatible embeddings endpoint.
     """
-    user, api_key = await authenticate_request(request, db)
+    user, api_key = auth
 
     try:
         body = await request.json()

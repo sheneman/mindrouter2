@@ -247,3 +247,304 @@ def mock_quota():
     quota.weight_override = None
 
     return quota
+
+
+# --- Structured output fixtures ---
+
+
+@pytest.fixture
+def simple_json_schema():
+    """Flat object schema: {name: str, age: int}."""
+    return {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "age": {"type": "integer"},
+        },
+        "required": ["name", "age"],
+    }
+
+
+@pytest.fixture
+def nested_json_schema():
+    """Nested object schema with address and tags."""
+    return {
+        "type": "object",
+        "properties": {
+            "user": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "address": {
+                        "type": "object",
+                        "properties": {
+                            "city": {"type": "string"},
+                            "zip": {"type": "string"},
+                        },
+                        "required": ["city", "zip"],
+                    },
+                },
+                "required": ["name", "address"],
+            },
+            "tags": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+        },
+        "required": ["user", "tags"],
+    }
+
+
+@pytest.fixture
+def enum_json_schema():
+    """Schema with enum values."""
+    return {
+        "type": "object",
+        "properties": {
+            "status": {
+                "type": "string",
+                "enum": ["active", "inactive"],
+            },
+            "priority": {"type": "integer"},
+        },
+        "required": ["status", "priority"],
+    }
+
+
+@pytest.fixture
+def array_schema():
+    """Array of objects schema."""
+    return {
+        "type": "object",
+        "properties": {
+            "items": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "quantity": {"type": "integer"},
+                    },
+                    "required": ["name", "quantity"],
+                },
+            },
+        },
+        "required": ["items"],
+    }
+
+
+@pytest.fixture
+def complex_schema():
+    """Realistic LLM use case schema — list of countries."""
+    return {
+        "type": "object",
+        "properties": {
+            "countries": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "capital": {"type": "string"},
+                        "population": {"type": "integer"},
+                        "languages": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                    },
+                    "required": ["name", "capital", "population", "languages"],
+                },
+            },
+        },
+        "required": ["countries"],
+    }
+
+
+# --- Mock streaming data fixtures ---
+
+
+@pytest.fixture
+def ollama_stream_chunks():
+    """Simulated Ollama ndjson stream chunks."""
+    import json
+
+    return [
+        json.dumps({
+            "model": "llama3.2",
+            "message": {"role": "assistant", "content": "Hello"},
+            "done": False,
+        }).encode() + b"\n",
+        json.dumps({
+            "model": "llama3.2",
+            "message": {"role": "assistant", "content": " there"},
+            "done": False,
+        }).encode() + b"\n",
+        json.dumps({
+            "model": "llama3.2",
+            "message": {"role": "assistant", "content": "!"},
+            "done": True,
+            "prompt_eval_count": 10,
+            "eval_count": 3,
+            "total_duration": 500000000,
+        }).encode() + b"\n",
+    ]
+
+
+@pytest.fixture
+def vllm_sse_chunks():
+    """Simulated vLLM/OpenAI SSE stream chunks."""
+    import json
+
+    return [
+        (
+            "data: "
+            + json.dumps({
+                "id": "chatcmpl-123",
+                "object": "chat.completion.chunk",
+                "created": 1700000000,
+                "model": "llama3.2",
+                "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": None}],
+            })
+            + "\n\n"
+        ).encode(),
+        (
+            "data: "
+            + json.dumps({
+                "id": "chatcmpl-123",
+                "object": "chat.completion.chunk",
+                "created": 1700000000,
+                "model": "llama3.2",
+                "choices": [{"index": 0, "delta": {"content": "Hello"}, "finish_reason": None}],
+            })
+            + "\n\n"
+        ).encode(),
+        (
+            "data: "
+            + json.dumps({
+                "id": "chatcmpl-123",
+                "object": "chat.completion.chunk",
+                "created": 1700000000,
+                "model": "llama3.2",
+                "choices": [{"index": 0, "delta": {"content": " world"}, "finish_reason": None}],
+            })
+            + "\n\n"
+        ).encode(),
+        (
+            "data: "
+            + json.dumps({
+                "id": "chatcmpl-123",
+                "object": "chat.completion.chunk",
+                "created": 1700000000,
+                "model": "llama3.2",
+                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12},
+            })
+            + "\n\n"
+        ).encode(),
+        b"data: [DONE]\n\n",
+    ]
+
+
+# --- Cross-engine mock backend fixtures ---
+
+
+@pytest.fixture
+def mock_ollama_backend():
+    """Mock backend with engine=OLLAMA."""
+    backend = MagicMock()
+    backend.id = 1
+    backend.name = "ollama-backend"
+    backend.url = "http://localhost:11434"
+    # Use a simple object with .value for engine to avoid importing db.models
+    engine = MagicMock()
+    engine.value = "ollama"
+    engine.__eq__ = lambda self, other: getattr(other, 'value', other) == "ollama"
+    backend.engine = engine
+    status = MagicMock()
+    status.value = "healthy"
+    backend.status = status
+    backend.supports_vision = True
+    backend.supports_embeddings = True
+    backend.supports_structured_output = True
+    backend.current_concurrent = 0
+    backend.max_concurrent = 10
+    backend.gpu_memory_gb = 24.0
+    backend.throughput_score = 1.0
+    backend.priority = 0
+    backend.consecutive_failures = 0
+    return backend
+
+
+@pytest.fixture
+def mock_vllm_backend():
+    """Mock backend with engine=VLLM."""
+    backend = MagicMock()
+    backend.id = 2
+    backend.name = "vllm-backend"
+    backend.url = "http://localhost:8000"
+    engine = MagicMock()
+    engine.value = "vllm"
+    engine.__eq__ = lambda self, other: getattr(other, 'value', other) == "vllm"
+    backend.engine = engine
+    status = MagicMock()
+    status.value = "healthy"
+    backend.status = status
+    backend.supports_vision = True
+    backend.supports_embeddings = True
+    backend.supports_structured_output = True
+    backend.current_concurrent = 0
+    backend.max_concurrent = 10
+    backend.gpu_memory_gb = 24.0
+    backend.throughput_score = 1.0
+    backend.priority = 0
+    backend.consecutive_failures = 0
+    return backend
+
+
+# --- Full parameter request fixtures ---
+
+
+@pytest.fixture
+def all_params_ollama_request():
+    """Ollama request with every supported option set."""
+    return {
+        "model": "llama3.2",
+        "messages": [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Hello!"},
+        ],
+        "stream": True,
+        "format": "json",
+        "options": {
+            "temperature": 0.8,
+            "top_p": 0.95,
+            "num_predict": 256,
+            "stop": ["\n", "END"],
+            "presence_penalty": 0.5,
+            "frequency_penalty": 0.3,
+            "seed": 42,
+        },
+    }
+
+
+@pytest.fixture
+def all_params_openai_request():
+    """OpenAI request with every supported parameter set."""
+    return {
+        "model": "gpt-4",
+        "messages": [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Hello!"},
+        ],
+        "temperature": 0.8,
+        "top_p": 0.95,
+        "max_tokens": 256,
+        "stream": False,
+        "stop": ["\n", "END"],
+        "presence_penalty": 0.5,
+        "frequency_penalty": 0.3,
+        "seed": 42,
+        "n": 1,
+        "user": "test-user",
+        "response_format": {"type": "json_object"},
+    }
