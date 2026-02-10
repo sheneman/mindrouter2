@@ -21,6 +21,7 @@ from backend.app.api.ollama_api import router as ollama_router
 from backend.app.api.admin_api import router as admin_router
 from backend.app.api.models_api import router as models_router
 from backend.app.api.health import router as health_router
+from backend.app.api.telemetry_api import router as telemetry_router
 
 # Create main API router
 api_router = APIRouter()
@@ -31,5 +32,6 @@ api_router.include_router(openai_router)
 api_router.include_router(ollama_router)
 api_router.include_router(models_router)
 api_router.include_router(admin_router, prefix="/api/admin", tags=["admin"])
+api_router.include_router(telemetry_router, prefix="/api/admin/telemetry", tags=["telemetry"])
 
 __all__ = ["api_router"]

@@ -37,6 +37,28 @@ router = APIRouter()
 
 
 # Request/Response models
+class NodeRegisterRequest(BaseModel):
+    """Request to register a new node."""
+    name: str = Field(..., min_length=1, max_length=100)
+    hostname: Optional[str] = None
+    sidecar_url: Optional[str] = None
+
+
+class NodeResponse(BaseModel):
+    """Node information response."""
+    id: int
+    name: str
+    hostname: Optional[str]
+    sidecar_url: Optional[str]
+    status: str
+    gpu_count: Optional[int]
+    driver_version: Optional[str]
+    cuda_version: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+
 class BackendRegisterRequest(BaseModel):
     """Request to register a new backend."""
     name: str = Field(..., min_length=1, max_length=100)
@@ -45,6 +67,8 @@ class BackendRegisterRequest(BaseModel):
     max_concurrent: int = Field(default=4, ge=1)
     gpu_memory_gb: Optional[float] = None
     gpu_type: Optional[str] = None
+    node_id: Optional[int] = None
+    gpu_indices: Optional[List[int]] = None
 
 
 class BackendResponse(BaseModel):
@@ -58,6 +82,9 @@ class BackendResponse(BaseModel):
     current_concurrent: int
     gpu_memory_gb: Optional[float]
     gpu_type: Optional[str]
+    node_id: Optional[int]
+    node_name: Optional[str]
+    gpu_indices: Optional[List[int]]
     supports_vision: bool
     supports_embeddings: bool
     version: Optional[str]
@@ -135,8 +162,17 @@ async def register_backend(
         max_concurrent=request.max_concurrent,
         gpu_memory_gb=request.gpu_memory_gb,
         gpu_type=request.gpu_type,
+        node_id=request.node_id,
+        gpu_indices=request.gpu_indices,
         db=db,
     )
+
+    # Resolve node name
+    node_name = None
+    if request.node_id:
+        node = await crud.get_node_by_id(db, request.node_id)
+        if node:
+            node_name = node.name
 
     logger.info(
         "backend_registered_by_admin",
@@ -155,6 +191,9 @@ async def register_backend(
         current_concurrent=backend.current_concurrent,
         gpu_memory_gb=backend.gpu_memory_gb,
         gpu_type=backend.gpu_type,
+        node_id=backend.node_id,
+        node_name=node_name,
+        gpu_indices=backend.gpu_indices,
         supports_vision=backend.supports_vision,
         supports_embeddings=backend.supports_embeddings,
         version=backend.version,
@@ -259,6 +298,9 @@ async def list_backends(
             current_concurrent=b.current_concurrent,
             gpu_memory_gb=b.gpu_memory_gb,
             gpu_type=b.gpu_type,
+            node_id=b.node_id,
+            node_name=b.node.name if b.node else None,
+            gpu_indices=b.gpu_indices,
             supports_vision=b.supports_vision,
             supports_embeddings=b.supports_embeddings,
             version=b.version,
@@ -266,6 +308,119 @@ async def list_backends(
         )
         for b in backends
     ]
+
+
+# Node Management
+@router.post("/nodes/register", response_model=NodeResponse)
+async def register_node(
+    request: NodeRegisterRequest,
+    admin: User = Depends(require_admin()),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Register a new physical node."""
+    existing = await crud.get_node_by_name(db, request.name)
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Node with name '{request.name}' already exists",
+        )
+
+    registry = get_registry()
+    node = await registry.register_node(
+        name=request.name,
+        hostname=request.hostname,
+        sidecar_url=request.sidecar_url,
+    )
+
+    logger.info(
+        "node_registered_by_admin",
+        admin_id=admin.id,
+        node_id=node.id,
+        name=node.name,
+    )
+
+    return NodeResponse(
+        id=node.id,
+        name=node.name,
+        hostname=node.hostname,
+        sidecar_url=node.sidecar_url,
+        status=node.status.value,
+        gpu_count=node.gpu_count,
+        driver_version=node.driver_version,
+        cuda_version=node.cuda_version,
+    )
+
+
+@router.get("/nodes", response_model=List[NodeResponse])
+async def list_nodes(
+    admin: User = Depends(require_admin()),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """List all nodes."""
+    nodes = await crud.get_all_nodes(db)
+    return [
+        NodeResponse(
+            id=n.id,
+            name=n.name,
+            hostname=n.hostname,
+            sidecar_url=n.sidecar_url,
+            status=n.status.value,
+            gpu_count=n.gpu_count,
+            driver_version=n.driver_version,
+            cuda_version=n.cuda_version,
+        )
+        for n in nodes
+    ]
+
+
+@router.delete("/nodes/{node_id}")
+async def delete_node(
+    node_id: int,
+    admin: User = Depends(require_admin()),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Delete a node (fails if backends still reference it)."""
+    node = await crud.get_node_by_id(db, node_id)
+    if not node:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Node not found",
+        )
+
+    registry = get_registry()
+    removed = await registry.remove_node(node_id)
+    if not removed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot delete node with active backends. Remove backends first.",
+        )
+
+    return {"status": "deleted", "node_id": node_id}
+
+
+@router.post("/nodes/{node_id}/refresh")
+async def refresh_node(
+    node_id: int,
+    admin: User = Depends(require_admin()),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Force refresh sidecar data for a node."""
+    node = await crud.get_node_by_id(db, node_id)
+    if not node:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Node not found",
+        )
+
+    registry = get_registry()
+    success = await registry.refresh_node(node_id)
+    if success:
+        return {"status": "refreshed", "node_id": node_id}
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Node has no sidecar configured",
+        )
 
 
 # Queue Management

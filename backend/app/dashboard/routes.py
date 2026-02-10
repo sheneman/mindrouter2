@@ -465,6 +465,133 @@ async def deny_request(
     return RedirectResponse(url="/admin/requests", status_code=302)
 
 
+@dashboard_router.get("/admin/nodes", response_class=HTMLResponse)
+async def admin_nodes(
+    request: Request,
+    success: Optional[str] = None,
+    error: Optional[str] = None,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Admin node management."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or user.role != UserRole.ADMIN:
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    nodes = await crud.get_all_nodes(db)
+
+    # Build node data with backends and GPU devices
+    node_data = []
+    for node in nodes:
+        # Get backends on this node
+        all_backends = await crud.get_all_backends(db)
+        node_backends = [b for b in all_backends if b.node_id == node.id]
+        gpu_devices = await crud.get_gpu_devices_for_node(db, node.id)
+
+        node_data.append({
+            "node": node,
+            "backends": node_backends,
+            "gpu_devices": gpu_devices,
+        })
+
+    return templates.TemplateResponse(
+        "admin/nodes.html",
+        {
+            "request": request,
+            "user": user,
+            "nodes": node_data,
+            "success": success,
+            "error": error,
+        },
+    )
+
+
+@dashboard_router.post("/admin/nodes/register")
+async def register_node(
+    request: Request,
+    name: str = Form(...),
+    hostname: Optional[str] = Form(None),
+    sidecar_url: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Register a new node."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or user.role != UserRole.ADMIN:
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    try:
+        existing = await crud.get_node_by_name(db, name)
+        if existing:
+            return RedirectResponse(
+                url="/admin/nodes?error=Node+name+already+exists", status_code=302
+            )
+
+        hostname_val = hostname if hostname else None
+        sidecar_url_val = sidecar_url if sidecar_url else None
+
+        registry = get_registry()
+        await registry.register_node(
+            name=name,
+            hostname=hostname_val,
+            sidecar_url=sidecar_url_val,
+        )
+        return RedirectResponse(url="/admin/nodes?success=registered", status_code=302)
+    except Exception:
+        return RedirectResponse(url="/admin/nodes?error=Registration+failed", status_code=302)
+
+
+@dashboard_router.post("/admin/nodes/{node_id}/remove")
+async def remove_node(
+    request: Request,
+    node_id: int,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Remove a node."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or user.role != UserRole.ADMIN:
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    registry = get_registry()
+    removed = await registry.remove_node(node_id)
+    if removed:
+        return RedirectResponse(url="/admin/nodes?success=removed", status_code=302)
+    else:
+        return RedirectResponse(
+            url="/admin/nodes?error=Cannot+remove+node+with+active+backends", status_code=302
+        )
+
+
+@dashboard_router.post("/admin/nodes/{node_id}/refresh")
+async def refresh_node(
+    request: Request,
+    node_id: int,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Refresh node sidecar data."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or user.role != UserRole.ADMIN:
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    registry = get_registry()
+    await registry.refresh_node(node_id)
+    return RedirectResponse(url="/admin/nodes?success=refreshed", status_code=302)
+
+
 @dashboard_router.get("/admin/backends", response_class=HTMLResponse)
 async def admin_backends(
     request: Request,
@@ -483,6 +610,7 @@ async def admin_backends(
 
     registry = get_registry()
     backends = await registry.get_all_backends()
+    nodes = await crud.get_all_nodes(db)
 
     # Get telemetry for each backend
     backend_data = []
@@ -501,6 +629,7 @@ async def admin_backends(
             "request": request,
             "user": user,
             "backends": backend_data,
+            "nodes": nodes,
             "success": success,
             "error": error,
         },
@@ -516,6 +645,8 @@ async def register_backend(
     max_concurrent: int = Form(4),
     gpu_memory_gb: Optional[str] = Form(None),
     gpu_type: Optional[str] = Form(None),
+    node_id: Optional[str] = Form(None),
+    gpu_indices: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_async_db),
 ):
     """Register a new backend."""
@@ -532,6 +663,14 @@ async def register_backend(
         gpu_mem = float(gpu_memory_gb) if gpu_memory_gb else None
         gpu_type_val = gpu_type if gpu_type else None
 
+        # Parse node_id
+        node_id_val = int(node_id) if node_id else None
+
+        # Parse gpu_indices (e.g., "0,1,2" -> [0, 1, 2])
+        gpu_indices_val = None
+        if gpu_indices and gpu_indices.strip():
+            gpu_indices_val = [int(x.strip()) for x in gpu_indices.split(",") if x.strip()]
+
         # Check for duplicate name
         existing = await crud.get_backend_by_name(db, name)
         if existing:
@@ -547,9 +686,11 @@ async def register_backend(
             max_concurrent=max_concurrent,
             gpu_memory_gb=gpu_mem,
             gpu_type=gpu_type_val,
+            node_id=node_id_val,
+            gpu_indices=gpu_indices_val,
         )
         return RedirectResponse(url="/admin/backends?success=registered", status_code=302)
-    except Exception as e:
+    except Exception:
         return RedirectResponse(url="/admin/backends?error=Registration+failed", status_code=302)
 
 
@@ -634,6 +775,26 @@ async def refresh_backend(
     registry = get_registry()
     await registry.refresh_backend(backend_id)
     return RedirectResponse(url="/admin/backends?success=refreshed", status_code=302)
+
+
+@dashboard_router.get("/admin/metrics", response_class=HTMLResponse)
+async def admin_metrics(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Admin GPU metrics dashboard."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or user.role != UserRole.ADMIN:
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    return templates.TemplateResponse(
+        "admin/metrics.html",
+        {"request": request, "user": user},
+    )
 
 
 @dashboard_router.get("/admin/audit", response_class=HTMLResponse)

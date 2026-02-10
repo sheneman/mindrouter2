@@ -1,0 +1,23 @@
+FROM nvidia/cuda:12.4.0-base-ubuntu22.04
+
+# Install Python
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+COPY gpu_agent.py .
+
+ENV GPU_AGENT_PORT=9101
+ENV GPU_AGENT_HOST=0.0.0.0
+
+EXPOSE 9101
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:9101/health')" || exit 1
+
+CMD ["python3", "-m", "uvicorn", "gpu_agent:app", "--host", "0.0.0.0", "--port", "9101"]

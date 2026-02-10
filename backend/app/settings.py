@@ -132,6 +132,11 @@ class Settings(BaseSettings):
     audit_log_prompts: bool = True
     audit_log_responses: bool = True
 
+    # Telemetry & GPU Metrics
+    telemetry_retention_days: int = 30
+    telemetry_cleanup_interval: int = 3600  # seconds
+    sidecar_timeout: int = 5  # seconds for sidecar HTTP calls
+
     # Observability
     metrics_enabled: bool = True
     metrics_prefix: str = "mindrouter"

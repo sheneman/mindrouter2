@@ -29,8 +29,12 @@ from backend.app.db.models import (
     BackendEngine,
     BackendStatus,
     BackendTelemetry,
+    GPUDevice,
+    GPUDeviceTelemetry,
     Model,
     Modality,
+    Node,
+    NodeStatus,
     Quota,
     QuotaRequest,
     QuotaRequestStatus,
@@ -299,12 +303,109 @@ async def reset_quota_if_needed(db: AsyncSession, user_id: int) -> Optional[Quot
     return quota
 
 
+# Node CRUD
+async def create_node(
+    db: AsyncSession,
+    name: str,
+    hostname: Optional[str] = None,
+    sidecar_url: Optional[str] = None,
+) -> Node:
+    """Create a new node."""
+    node = Node(
+        name=name,
+        hostname=hostname,
+        sidecar_url=sidecar_url,
+        status=NodeStatus.UNKNOWN,
+    )
+    db.add(node)
+    await db.flush()
+    return node
+
+
+async def get_node_by_id(db: AsyncSession, node_id: int) -> Optional[Node]:
+    """Get node by ID."""
+    result = await db.execute(select(Node).where(Node.id == node_id))
+    return result.scalar_one_or_none()
+
+
+async def get_node_by_name(db: AsyncSession, name: str) -> Optional[Node]:
+    """Get node by name."""
+    result = await db.execute(select(Node).where(Node.name == name))
+    return result.scalar_one_or_none()
+
+
+async def get_all_nodes(db: AsyncSession) -> List[Node]:
+    """Get all nodes."""
+    result = await db.execute(select(Node))
+    return list(result.scalars().all())
+
+
+async def update_node_hardware(
+    db: AsyncSession,
+    node_id: int,
+    gpu_count: Optional[int] = None,
+    driver_version: Optional[str] = None,
+    cuda_version: Optional[str] = None,
+) -> Optional[Node]:
+    """Update node hardware info from sidecar."""
+    result = await db.execute(select(Node).where(Node.id == node_id))
+    node = result.scalar_one_or_none()
+    if node:
+        if gpu_count is not None:
+            node.gpu_count = gpu_count
+        if driver_version is not None:
+            node.driver_version = driver_version
+        if cuda_version is not None:
+            node.cuda_version = cuda_version
+        await db.flush()
+    return node
+
+
+async def update_node_status(
+    db: AsyncSession,
+    node_id: int,
+    status: NodeStatus,
+) -> Optional[Node]:
+    """Update node status."""
+    result = await db.execute(select(Node).where(Node.id == node_id))
+    node = result.scalar_one_or_none()
+    if node:
+        node.status = status
+        await db.flush()
+    return node
+
+
+async def delete_node(db: AsyncSession, node_id: int) -> bool:
+    """Delete a node. Fails if backends still reference it."""
+    # Check for backends referencing this node
+    result = await db.execute(
+        select(Backend).where(Backend.node_id == node_id).limit(1)
+    )
+    if result.scalar_one_or_none():
+        return False
+
+    # Delete GPU devices on this node (cascade deletes their telemetry)
+    gpu_result = await db.execute(
+        select(GPUDevice).where(GPUDevice.node_id == node_id)
+    )
+    for device in gpu_result.scalars().all():
+        await db.delete(device)
+
+    result = await db.execute(select(Node).where(Node.id == node_id))
+    node = result.scalar_one_or_none()
+    if node:
+        await db.delete(node)
+        await db.flush()
+        return True
+    return False
+
+
 # Backend CRUD
 async def get_backend_by_id(db: AsyncSession, backend_id: int) -> Optional[Backend]:
     """Get backend by ID."""
     result = await db.execute(
         select(Backend)
-        .options(selectinload(Backend.models))
+        .options(selectinload(Backend.models), selectinload(Backend.node))
         .where(Backend.id == backend_id)
     )
     return result.scalar_one_or_none()
@@ -323,14 +424,14 @@ async def get_healthy_backends(
     query = select(Backend).where(Backend.status == BackendStatus.HEALTHY)
     if engine:
         query = query.where(Backend.engine == engine)
-    result = await db.execute(query.options(selectinload(Backend.models)))
+    result = await db.execute(query.options(selectinload(Backend.models), selectinload(Backend.node)))
     return list(result.scalars().all())
 
 
 async def get_all_backends(db: AsyncSession) -> List[Backend]:
     """Get all backends."""
     result = await db.execute(
-        select(Backend).options(selectinload(Backend.models))
+        select(Backend).options(selectinload(Backend.models), selectinload(Backend.node))
     )
     return list(result.scalars().all())
 
@@ -343,6 +444,8 @@ async def create_backend(
     max_concurrent: int = 4,
     gpu_memory_gb: Optional[float] = None,
     gpu_type: Optional[str] = None,
+    node_id: Optional[int] = None,
+    gpu_indices: Optional[list] = None,
 ) -> Backend:
     """Register a new backend."""
     backend = Backend(
@@ -352,6 +455,8 @@ async def create_backend(
         max_concurrent=max_concurrent,
         gpu_memory_gb=gpu_memory_gb,
         gpu_type=gpu_type,
+        node_id=node_id,
+        gpu_indices=gpu_indices,
         status=BackendStatus.UNKNOWN,
     )
     db.add(backend)
@@ -722,6 +827,9 @@ async def create_telemetry_snapshot(
     active_requests: int = 0,
     queued_requests: int = 0,
     loaded_models: Optional[list] = None,
+    gpu_power_draw_watts: Optional[float] = None,
+    gpu_fan_speed_percent: Optional[float] = None,
+    gpu_temperature: Optional[float] = None,
 ) -> BackendTelemetry:
     """Create a telemetry snapshot."""
     telemetry = BackendTelemetry(
@@ -729,6 +837,9 @@ async def create_telemetry_snapshot(
         gpu_utilization=gpu_utilization,
         gpu_memory_used_gb=gpu_memory_used_gb,
         gpu_memory_total_gb=gpu_memory_total_gb,
+        gpu_temperature=gpu_temperature,
+        gpu_power_draw_watts=gpu_power_draw_watts,
+        gpu_fan_speed_percent=gpu_fan_speed_percent,
         active_requests=active_requests,
         queued_requests=queued_requests,
         loaded_models=loaded_models,
@@ -749,6 +860,357 @@ async def get_latest_telemetry(
         .limit(1)
     )
     return result.scalar_one_or_none()
+
+
+# GPU Device CRUD
+async def upsert_gpu_device(
+    db: AsyncSession,
+    node_id: int,
+    gpu_index: int,
+    uuid: Optional[str] = None,
+    name: Optional[str] = None,
+    pci_bus_id: Optional[str] = None,
+    compute_capability: Optional[str] = None,
+    memory_total_gb: Optional[float] = None,
+    power_limit_watts: Optional[float] = None,
+) -> GPUDevice:
+    """Create or update a GPU device record."""
+    result = await db.execute(
+        select(GPUDevice).where(
+            and_(GPUDevice.node_id == node_id, GPUDevice.gpu_index == gpu_index)
+        )
+    )
+    device = result.scalar_one_or_none()
+
+    if device:
+        if uuid is not None:
+            device.uuid = uuid
+        if name is not None:
+            device.name = name
+        if pci_bus_id is not None:
+            device.pci_bus_id = pci_bus_id
+        if compute_capability is not None:
+            device.compute_capability = compute_capability
+        if memory_total_gb is not None:
+            device.memory_total_gb = memory_total_gb
+        if power_limit_watts is not None:
+            device.power_limit_watts = power_limit_watts
+    else:
+        device = GPUDevice(
+            node_id=node_id,
+            gpu_index=gpu_index,
+            uuid=uuid,
+            name=name,
+            pci_bus_id=pci_bus_id,
+            compute_capability=compute_capability,
+            memory_total_gb=memory_total_gb,
+            power_limit_watts=power_limit_watts,
+        )
+        db.add(device)
+
+    await db.flush()
+    return device
+
+
+async def create_gpu_device_telemetry(
+    db: AsyncSession,
+    gpu_device_id: int,
+    utilization_gpu: Optional[float] = None,
+    utilization_memory: Optional[float] = None,
+    memory_used_gb: Optional[float] = None,
+    memory_free_gb: Optional[float] = None,
+    temperature_gpu: Optional[float] = None,
+    temperature_memory: Optional[float] = None,
+    power_draw_watts: Optional[float] = None,
+    fan_speed_percent: Optional[float] = None,
+    clock_sm_mhz: Optional[int] = None,
+    clock_memory_mhz: Optional[int] = None,
+) -> GPUDeviceTelemetry:
+    """Create a per-GPU telemetry snapshot."""
+    telemetry = GPUDeviceTelemetry(
+        gpu_device_id=gpu_device_id,
+        utilization_gpu=utilization_gpu,
+        utilization_memory=utilization_memory,
+        memory_used_gb=memory_used_gb,
+        memory_free_gb=memory_free_gb,
+        temperature_gpu=temperature_gpu,
+        temperature_memory=temperature_memory,
+        power_draw_watts=power_draw_watts,
+        fan_speed_percent=fan_speed_percent,
+        clock_sm_mhz=clock_sm_mhz,
+        clock_memory_mhz=clock_memory_mhz,
+    )
+    db.add(telemetry)
+    await db.flush()
+    return telemetry
+
+
+async def get_gpu_devices_for_node(
+    db: AsyncSession, node_id: int
+) -> List[GPUDevice]:
+    """Get all GPU devices for a node."""
+    result = await db.execute(
+        select(GPUDevice)
+        .where(GPUDevice.node_id == node_id)
+        .order_by(GPUDevice.gpu_index)
+    )
+    return list(result.scalars().all())
+
+
+async def get_gpu_devices_for_backend(
+    db: AsyncSession, backend_id: int
+) -> List[GPUDevice]:
+    """Get GPU devices assigned to a backend (via its node + gpu_indices)."""
+    # Look up the backend's node_id and gpu_indices
+    result = await db.execute(
+        select(Backend.node_id, Backend.gpu_indices).where(Backend.id == backend_id)
+    )
+    row = result.one_or_none()
+    if not row or not row[0]:
+        return []
+
+    node_id, gpu_indices = row
+
+    query = (
+        select(GPUDevice)
+        .where(GPUDevice.node_id == node_id)
+        .order_by(GPUDevice.gpu_index)
+    )
+    if gpu_indices:
+        query = query.where(GPUDevice.gpu_index.in_(gpu_indices))
+
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
+async def get_all_gpu_devices(db: AsyncSession) -> List[GPUDevice]:
+    """Get all GPU devices across all nodes."""
+    result = await db.execute(
+        select(GPUDevice).order_by(GPUDevice.node_id, GPUDevice.gpu_index)
+    )
+    return list(result.scalars().all())
+
+
+async def get_backend_telemetry_history(
+    db: AsyncSession,
+    backend_id: int,
+    start: datetime,
+    end: datetime,
+    resolution_minutes: int = 5,
+) -> List[dict]:
+    """Get aggregated backend telemetry history with time bucketing."""
+    from sqlalchemy import text
+
+    query = text("""
+        SELECT
+            DATE_FORMAT(timestamp, :bucket_format) as time_bucket,
+            AVG(gpu_utilization) as avg_gpu_utilization,
+            MIN(gpu_utilization) as min_gpu_utilization,
+            MAX(gpu_utilization) as max_gpu_utilization,
+            AVG(gpu_memory_used_gb) as avg_gpu_memory_used_gb,
+            AVG(gpu_memory_total_gb) as avg_gpu_memory_total_gb,
+            AVG(gpu_temperature) as avg_gpu_temperature,
+            AVG(gpu_power_draw_watts) as avg_gpu_power_draw_watts,
+            AVG(active_requests) as avg_active_requests,
+            AVG(queued_requests) as avg_queued_requests,
+            AVG(requests_per_second) as avg_requests_per_second
+        FROM backend_telemetry
+        WHERE backend_id = :backend_id
+          AND timestamp >= :start
+          AND timestamp <= :end
+        GROUP BY time_bucket
+        ORDER BY time_bucket
+    """)
+
+    # Choose bucket format based on resolution
+    if resolution_minutes <= 1:
+        bucket_format = "%Y-%m-%d %H:%i"
+    elif resolution_minutes <= 5:
+        # Round to 5-minute intervals
+        bucket_format = "%Y-%m-%d %H:"
+        # Use a more complex expression for 5-min bucketing
+        query = text("""
+            SELECT
+                CONCAT(DATE_FORMAT(timestamp, '%Y-%m-%d %H:'),
+                       LPAD(FLOOR(MINUTE(timestamp) / :res_min) * :res_min, 2, '0')) as time_bucket,
+                AVG(gpu_utilization) as avg_gpu_utilization,
+                MIN(gpu_utilization) as min_gpu_utilization,
+                MAX(gpu_utilization) as max_gpu_utilization,
+                AVG(gpu_memory_used_gb) as avg_gpu_memory_used_gb,
+                AVG(gpu_memory_total_gb) as avg_gpu_memory_total_gb,
+                AVG(gpu_temperature) as avg_gpu_temperature,
+                AVG(gpu_power_draw_watts) as avg_gpu_power_draw_watts,
+                AVG(active_requests) as avg_active_requests,
+                AVG(queued_requests) as avg_queued_requests,
+                AVG(requests_per_second) as avg_requests_per_second
+            FROM backend_telemetry
+            WHERE backend_id = :backend_id
+              AND timestamp >= :start
+              AND timestamp <= :end
+            GROUP BY time_bucket
+            ORDER BY time_bucket
+        """)
+    elif resolution_minutes <= 60:
+        bucket_format = "%Y-%m-%d %H:00"
+    else:
+        bucket_format = "%Y-%m-%d"
+
+    params = {
+        "backend_id": backend_id,
+        "start": start,
+        "end": end,
+        "bucket_format": bucket_format,
+        "res_min": resolution_minutes,
+    }
+
+    result = await db.execute(query, params)
+    rows = result.mappings().all()
+
+    return [
+        {
+            "timestamp": row["time_bucket"],
+            "gpu_utilization": row["avg_gpu_utilization"],
+            "gpu_utilization_min": row["min_gpu_utilization"],
+            "gpu_utilization_max": row["max_gpu_utilization"],
+            "gpu_memory_used_gb": row["avg_gpu_memory_used_gb"],
+            "gpu_memory_total_gb": row["avg_gpu_memory_total_gb"],
+            "gpu_temperature": row["avg_gpu_temperature"],
+            "gpu_power_draw_watts": row["avg_gpu_power_draw_watts"],
+            "active_requests": row["avg_active_requests"],
+            "queued_requests": row["avg_queued_requests"],
+            "requests_per_second": row["avg_requests_per_second"],
+        }
+        for row in rows
+    ]
+
+
+async def get_gpu_device_telemetry_history(
+    db: AsyncSession,
+    gpu_device_id: int,
+    start: datetime,
+    end: datetime,
+    resolution_minutes: int = 5,
+) -> List[dict]:
+    """Get aggregated per-GPU telemetry history with time bucketing."""
+    from sqlalchemy import text
+
+    query = text("""
+        SELECT
+            CONCAT(DATE_FORMAT(timestamp, '%Y-%m-%d %H:'),
+                   LPAD(FLOOR(MINUTE(timestamp) / :res_min) * :res_min, 2, '0')) as time_bucket,
+            AVG(utilization_gpu) as avg_utilization_gpu,
+            MIN(utilization_gpu) as min_utilization_gpu,
+            MAX(utilization_gpu) as max_utilization_gpu,
+            AVG(utilization_memory) as avg_utilization_memory,
+            AVG(memory_used_gb) as avg_memory_used_gb,
+            AVG(memory_free_gb) as avg_memory_free_gb,
+            AVG(temperature_gpu) as avg_temperature_gpu,
+            AVG(temperature_memory) as avg_temperature_memory,
+            AVG(power_draw_watts) as avg_power_draw_watts,
+            AVG(fan_speed_percent) as avg_fan_speed_percent,
+            AVG(clock_sm_mhz) as avg_clock_sm_mhz,
+            AVG(clock_memory_mhz) as avg_clock_memory_mhz
+        FROM gpu_device_telemetry
+        WHERE gpu_device_id = :gpu_device_id
+          AND timestamp >= :start
+          AND timestamp <= :end
+        GROUP BY time_bucket
+        ORDER BY time_bucket
+    """)
+
+    result = await db.execute(query, {
+        "gpu_device_id": gpu_device_id,
+        "start": start,
+        "end": end,
+        "res_min": resolution_minutes,
+    })
+    rows = result.mappings().all()
+
+    return [
+        {
+            "timestamp": row["time_bucket"],
+            "utilization_gpu": row["avg_utilization_gpu"],
+            "utilization_gpu_min": row["min_utilization_gpu"],
+            "utilization_gpu_max": row["max_utilization_gpu"],
+            "utilization_memory": row["avg_utilization_memory"],
+            "memory_used_gb": row["avg_memory_used_gb"],
+            "memory_free_gb": row["avg_memory_free_gb"],
+            "temperature_gpu": row["avg_temperature_gpu"],
+            "temperature_memory": row["avg_temperature_memory"],
+            "power_draw_watts": row["avg_power_draw_watts"],
+            "fan_speed_percent": row["avg_fan_speed_percent"],
+            "clock_sm_mhz": row["avg_clock_sm_mhz"],
+            "clock_memory_mhz": row["avg_clock_memory_mhz"],
+        }
+        for row in rows
+    ]
+
+
+async def get_latest_gpu_device_telemetry(
+    db: AsyncSession, node_id: int
+) -> List[GPUDeviceTelemetry]:
+    """Get the most recent telemetry for each GPU device on a node."""
+    # Get device IDs for this node
+    device_result = await db.execute(
+        select(GPUDevice.id).where(GPUDevice.node_id == node_id)
+    )
+    device_ids = [row[0] for row in device_result.all()]
+
+    if not device_ids:
+        return []
+
+    # Get max timestamp per device
+    from sqlalchemy import text
+    placeholders = ",".join(str(d) for d in device_ids)
+    subq = text(f"""
+        SELECT gpu_device_id, MAX(timestamp) as max_ts
+        FROM gpu_device_telemetry
+        WHERE gpu_device_id IN ({placeholders})
+        GROUP BY gpu_device_id
+    """)
+
+    result = await db.execute(subq)
+    latest_map = {row[0]: row[1] for row in result.all()}
+
+    if not latest_map:
+        return []
+
+    # Fetch the actual rows
+    conditions = []
+    for device_id, max_ts in latest_map.items():
+        conditions.append(
+            and_(
+                GPUDeviceTelemetry.gpu_device_id == device_id,
+                GPUDeviceTelemetry.timestamp == max_ts,
+            )
+        )
+
+    result = await db.execute(
+        select(GPUDeviceTelemetry).where(or_(*conditions))
+    )
+    return list(result.scalars().all())
+
+
+async def delete_old_telemetry(
+    db: AsyncSession, older_than: datetime
+) -> int:
+    """Delete backend telemetry data older than the given datetime."""
+    result = await db.execute(
+        delete(BackendTelemetry).where(BackendTelemetry.timestamp < older_than)
+    )
+    await db.flush()
+    return result.rowcount
+
+
+async def delete_old_gpu_telemetry(
+    db: AsyncSession, older_than: datetime
+) -> int:
+    """Delete per-GPU telemetry data older than the given datetime."""
+    result = await db.execute(
+        delete(GPUDeviceTelemetry).where(GPUDeviceTelemetry.timestamp < older_than)
+    )
+    await db.flush()
+    return result.rowcount
 
 
 # Quota Request CRUD

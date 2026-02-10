@@ -181,6 +181,57 @@ def require_admin():
     return check_admin
 
 
+def require_admin_or_session():
+    """
+    Dependency that requires admin role via API key OR session cookie.
+
+    This enables admin-only API endpoints to be called from both:
+    - Programmatic clients (via API key in Authorization/X-API-Key header)
+    - Dashboard AJAX calls (via session cookie from browser login)
+    """
+    async def check_admin(
+        request: Request,
+        credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+        db: AsyncSession = Depends(get_async_db),
+    ) -> User:
+        # Try API key auth first
+        api_key_str = None
+        if credentials and credentials.credentials:
+            api_key_str = credentials.credentials
+        if not api_key_str:
+            api_key_str = request.headers.get("X-API-Key")
+
+        if api_key_str:
+            # API key path — delegate to standard auth
+            from backend.app.security.api_keys import verify_api_key as _verify
+            api_key = await _verify(db, api_key_str)
+            if api_key and api_key.status == ApiKeyStatus.ACTIVE:
+                user = api_key.user
+                if user and user.is_active and user.role == UserRole.ADMIN:
+                    return user
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid API key or insufficient permissions",
+            )
+
+        # Fallback to session cookie
+        session_data = request.cookies.get("mindrouter_session")
+        if session_data:
+            try:
+                user_id = int(session_data)
+                user = await crud.get_user_by_id(db, user_id)
+                if user and user.is_active and user.role == UserRole.ADMIN:
+                    return user
+            except (ValueError, TypeError):
+                pass
+
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+    return check_admin
+
+
 class AuthenticatedUser:
     """Dependency class for getting authenticated user."""
 

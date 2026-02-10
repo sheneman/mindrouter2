@@ -91,6 +91,41 @@ class TelemetrySnapshot:
 
 
 @dataclass
+class GPUDeviceSnapshot:
+    """Detailed per-GPU device snapshot from sidecar agent."""
+
+    index: int = 0
+    name: Optional[str] = None
+    uuid: Optional[str] = None
+    pci_bus_id: Optional[str] = None
+    compute_capability: Optional[str] = None
+    memory_total_gb: Optional[float] = None
+    memory_used_gb: Optional[float] = None
+    memory_free_gb: Optional[float] = None
+    utilization_gpu: Optional[float] = None
+    utilization_memory: Optional[float] = None
+    temperature_gpu: Optional[float] = None
+    temperature_memory: Optional[float] = None
+    power_draw_watts: Optional[float] = None
+    power_limit_watts: Optional[float] = None
+    fan_speed_percent: Optional[float] = None
+    clock_sm_mhz: Optional[int] = None
+    clock_memory_mhz: Optional[int] = None
+
+
+@dataclass
+class SidecarResponse:
+    """Full response from GPU sidecar agent."""
+
+    hostname: Optional[str] = None
+    driver_version: Optional[str] = None
+    cuda_version: Optional[str] = None
+    gpu_count: int = 0
+    gpus: List[GPUDeviceSnapshot] = field(default_factory=list)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+@dataclass
 class BackendHealth:
     """Health check result for a backend."""
 

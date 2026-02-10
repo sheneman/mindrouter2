@@ -98,6 +98,28 @@ services:
     profiles:
       - dev
 
+  # GPU sidecar agent for per-GPU hardware metrics
+  gpu-sidecar:
+    build:
+      context: ./sidecar
+      dockerfile: Dockerfile.sidecar
+    ports:
+      - "9101:9101"
+    environment:
+      - GPU_AGENT_PORT=9101
+      - GPU_AGENT_HOST=0.0.0.0
+    networks:
+      - mindrouter_network
+    profiles:
+      - gpu
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
 volumes:
   mariadb_data:
   redis_data:

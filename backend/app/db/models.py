@@ -71,6 +71,13 @@ class BackendStatus(str, PyEnum):
     UNKNOWN = "unknown"
 
 
+class NodeStatus(str, PyEnum):
+    """Node health status."""
+    ONLINE = "online"
+    OFFLINE = "offline"
+    UNKNOWN = "unknown"
+
+
 class RequestStatus(str, PyEnum):
     """Request processing status."""
     QUEUED = "queued"
@@ -252,6 +259,30 @@ class UsageLedger(Base, TimestampMixin):
     )
 
 
+# Node Models
+class Node(Base, TimestampMixin):
+    """Physical server node with GPU hardware and sidecar agent."""
+
+    __tablename__ = "nodes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    hostname: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    sidecar_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    status: Mapped[NodeStatus] = mapped_column(
+        Enum(NodeStatus, values_callable=_enum_values), nullable=False, default=NodeStatus.UNKNOWN
+    )
+
+    # Hardware info (populated by sidecar)
+    gpu_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    driver_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    cuda_version: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+
+    # Relationships
+    gpu_devices: Mapped[List["GPUDevice"]] = relationship("GPUDevice", back_populates="node")
+    backends: Mapped[List["Backend"]] = relationship("Backend", back_populates="node")
+
+
 # Backend Models
 class Backend(Base, TimestampMixin):
     """Backend inference server registration."""
@@ -293,7 +324,12 @@ class Backend(Base, TimestampMixin):
     live_failure_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     circuit_open_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Node association
+    node_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("nodes.id"), nullable=True)
+    gpu_indices: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # e.g. [0, 1] or null for all
+
     # Relationships
+    node: Mapped[Optional["Node"]] = relationship("Node", back_populates="backends")
     models: Mapped[List["Model"]] = relationship("Model", back_populates="backend")
     telemetry: Mapped[List["BackendTelemetry"]] = relationship("BackendTelemetry", back_populates="backend")
 
@@ -318,6 +354,8 @@ class BackendTelemetry(Base):
     gpu_memory_used_gb: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     gpu_memory_total_gb: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     gpu_temperature: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    gpu_power_draw_watts: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    gpu_fan_speed_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     # Request metrics
     active_requests: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -365,6 +403,72 @@ class Model(Base, TimestampMixin):
     __table_args__ = (
         Index("ix_models_backend_name", "backend_id", "name"),
         Index("ix_models_name", "name"),
+    )
+
+
+# GPU Device Models
+class GPUDevice(Base, TimestampMixin):
+    """Individual GPU device on a node."""
+
+    __tablename__ = "gpu_devices"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    node_id: Mapped[int] = mapped_column(Integer, ForeignKey("nodes.id"), nullable=False)
+    gpu_index: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Static device info (updated on discovery, not every poll)
+    uuid: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    pci_bus_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    compute_capability: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    memory_total_gb: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    power_limit_watts: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # Relationships
+    node: Mapped["Node"] = relationship("Node", back_populates="gpu_devices")
+    telemetry: Mapped[List["GPUDeviceTelemetry"]] = relationship(
+        "GPUDeviceTelemetry", back_populates="gpu_device", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        Index("ix_gpu_devices_node_index", "node_id", "gpu_index", unique=True),
+    )
+
+
+class GPUDeviceTelemetry(Base):
+    """Per-GPU time-series telemetry snapshots."""
+
+    __tablename__ = "gpu_device_telemetry"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    gpu_device_id: Mapped[int] = mapped_column(Integer, ForeignKey("gpu_devices.id"), nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # Utilization
+    utilization_gpu: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    utilization_memory: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # Memory
+    memory_used_gb: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    memory_free_gb: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # Thermal & Power
+    temperature_gpu: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    temperature_memory: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    power_draw_watts: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    fan_speed_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # Clocks
+    clock_sm_mhz: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    clock_memory_mhz: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    # Relationships
+    gpu_device: Mapped["GPUDevice"] = relationship("GPUDevice", back_populates="telemetry")
+
+    __table_args__ = (
+        Index("ix_gpu_device_telemetry_device_time", "gpu_device_id", "timestamp"),
     )
 
 
