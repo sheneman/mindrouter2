@@ -133,9 +133,21 @@ def _make_job(model="llama3"):
 
 @pytest.fixture
 def scorer():
-    """Create a BackendScorer with controlled settings."""
-    with patch("backend.app.core.scheduler.scoring.get_settings", return_value=_mock_settings):
-        return BackendScorer()
+    """Create a BackendScorer with controlled settings.
+
+    We can't use patch() on the scoring module because it was evicted from
+    sys.modules after import (to avoid polluting test_scheduler.py).  Instead,
+    construct the scorer and directly set the weight attributes that __init__
+    would have read from get_settings().
+    """
+    s = BackendScorer.__new__(BackendScorer)
+    s._settings = _mock_settings
+    s._weight_model_loaded = _mock_settings.scheduler_score_model_loaded
+    s._weight_low_utilization = _mock_settings.scheduler_score_low_utilization
+    s._weight_short_queue = _mock_settings.scheduler_score_short_queue
+    s._weight_high_throughput = _mock_settings.scheduler_score_high_throughput
+    s._weight_latency = _mock_settings.scheduler_score_latency
+    return s
 
 
 class TestExcludeBackendIds:
