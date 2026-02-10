@@ -15,6 +15,7 @@
 """FastAPI application entry point."""
 
 import asyncio
+import uuid
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -65,6 +66,47 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     logger.info("MindRouter2 shutdown complete")
 
 
+class RequestIDMiddleware:
+    """Raw ASGI middleware for request ID injection.
+
+    Unlike @app.middleware("http") which wraps in BaseHTTPMiddleware,
+    this does NOT run the handler in a separate task, so client disconnects
+    won't cancel in-flight DB operations and leak connections.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        # Extract request ID from headers
+        headers = dict(scope.get("headers", []))
+        request_id = (
+            headers.get(b"x-request-id", b"").decode()
+            or str(uuid.uuid4())
+        )
+
+        bind_request_context(request_id=request_id)
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                # Inject X-Request-ID into response headers
+                response_headers = list(message.get("headers", []))
+                response_headers.append(
+                    (b"x-request-id", request_id.encode())
+                )
+                message = {**message, "headers": response_headers}
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        finally:
+            clear_request_context()
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     settings = get_settings()
@@ -87,20 +129,9 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Request ID middleware
-    @app.middleware("http")
-    async def request_id_middleware(request: Request, call_next):
-        """Add request ID to all requests."""
-        import uuid
-
-        request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
-        bind_request_context(request_id=request_id)
-
-        response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
-
-        clear_request_context()
-        return response
+    # Request ID middleware — raw ASGI to avoid BaseHTTPMiddleware's task
+    # cancellation behavior which corrupts DB sessions on client disconnect.
+    app.add_middleware(RequestIDMiddleware)
 
     # Exception handlers
     @app.exception_handler(Exception)

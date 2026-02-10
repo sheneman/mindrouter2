@@ -14,6 +14,7 @@
 
 """Inference service - handles request routing and backend proxying."""
 
+import asyncio
 import json
 import time
 from datetime import datetime, timezone
@@ -349,7 +350,11 @@ class InferenceService:
         endpoint: str,
         modality: Modality = Modality.CHAT,
     ):
-        """Create audit record for the request."""
+        """Create audit record for the request.
+
+        Commits the pre-inference transaction immediately so no DB locks
+        are held during the long-running inference phase.
+        """
         messages = None
         prompt = None
         parameters = {}
@@ -368,7 +373,7 @@ class InferenceService:
         if hasattr(request, "response_format") and request.response_format:
             response_format = request.response_format.model_dump()
 
-        return await crud.create_request(
+        db_request = await crud.create_request(
             db=self.db,
             user_id=user.id,
             api_key_id=api_key.id,
@@ -384,13 +389,20 @@ class InferenceService:
             user_agent=http_request.headers.get("user-agent"),
         )
 
+        # Commit pre-inference writes (request INSERT, any quota changes)
+        # so no row locks are held during the long-running inference phase.
+        # expire_on_commit=False ensures db_request.id remains accessible.
+        await self.db.commit()
+
+        return db_request
+
     async def _route_request(
         self,
         job: Job,
         user: User,
         modality: Optional[Modality] = None,
     ):
-        """Route request to a backend."""
+        """Route request to a backend, waiting for capacity if needed."""
         # Get backends that support the model
         backends = await self._registry.get_backends_with_model(
             job.model, modality
@@ -416,24 +428,78 @@ class InferenceService:
         # Get GPU utilizations
         gpu_utilizations = await self._registry.get_gpu_utilizations()
 
-        # Submit to scheduler and route
+        # Submit to scheduler
         await self._scheduler.submit_job(job, user.role.value)
-        try:
-            decision = await self._scheduler.route_job(
-                job, backends, backend_models, gpu_utilizations
-            )
-        except Exception:
-            await self._scheduler.cancel_job(job.request_id)
-            raise
 
-        if not decision.success:
-            await self._scheduler.cancel_job(job.request_id)
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"No suitable backend: {decision.reason}",
-            )
+        # Retry loop: wait for capacity instead of immediately 503-ing
+        # Use half the backend timeout for routing, leaving the rest for inference
+        route_timeout = self._settings.backend_request_timeout / 2
+        deadline = time.monotonic() + route_timeout
+        last_reason = ""
 
-        return decision.backend, backend_models.get(decision.backend.id, [])
+        while True:
+            try:
+                decision = await self._scheduler.route_job(
+                    job, backends, backend_models, gpu_utilizations
+                )
+            except Exception:
+                await self._scheduler.cancel_job(job.request_id)
+                raise
+
+            if decision.success:
+                return decision.backend, backend_models.get(decision.backend.id, [])
+
+            last_reason = decision.reason
+
+            # If failure is NOT a capacity issue, don't retry
+            if decision.score and decision.all_scores:
+                capacity_issue = any(
+                    "no_capacity" in s.failed_constraints
+                    for s in decision.all_scores
+                    if s.failed_constraints
+                )
+            else:
+                capacity_issue = "No backends available" in last_reason
+
+            if not capacity_issue:
+                await self._scheduler.cancel_job(job.request_id)
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=f"No suitable backend: {last_reason}",
+                )
+
+            # Check deadline
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                await self._scheduler.cancel_job(job.request_id)
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=f"No backend capacity available (waited {route_timeout}s)",
+                )
+
+            # Wait for a slot to open (capped at remaining time)
+            wait_time = min(5.0, remaining)
+            await self._scheduler.wait_for_capacity(wait_time)
+
+            # Refresh backend state for next attempt
+            backends = await self._registry.get_backends_with_model(
+                job.model, modality
+            )
+            if not backends:
+                backends = await self._registry.get_healthy_backends()
+            if not backends:
+                await self._scheduler.cancel_job(job.request_id)
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="No healthy backends available",
+                )
+
+            backend_models = {}
+            for backend in backends:
+                backend_models[backend.id] = await self._registry.get_backend_models(
+                    backend.id
+                )
+            gpu_utilizations = await self._registry.get_gpu_utilizations()
 
     async def _proxy_chat_request(
         self,
@@ -665,47 +731,66 @@ class InferenceService:
             prompt_tokens = job.estimated_prompt_tokens
             completion_tokens = job.estimated_completion_tokens
 
-        # Update request record
-        await crud.update_request_completed(
-            self.db, db_request.id,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            tokens_estimated=tokens_estimated,
-        )
-
-        # Create response record
-        content = None
-        if "choices" in response and response["choices"]:
-            msg = response["choices"][0].get("message", {})
-            content = msg.get("content")
-
-        await crud.create_response(
-            self.db, db_request.id,
-            content=content,
-            finish_reason=response.get("choices", [{}])[0].get("finish_reason"),
-        )
-
-        # Update usage ledger
         total_tokens = prompt_tokens + completion_tokens
-        await crud.create_usage_entry(
-            self.db,
-            user_id=db_request.user_id,
-            api_key_id=db_request.api_key_id,
-            request_id=db_request.id,
-            model=db_request.model,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            is_estimated=tokens_estimated,
-            backend_id=backend_id,
-        )
 
-        # Update quota
-        await crud.update_quota_usage(self.db, db_request.user_id, total_tokens)
-
-        # Notify scheduler
+        # Release backend capacity FIRST, before DB writes.
+        # This prevents the scheduler queue depth counter from getting stuck
+        # if subsequent DB operations fail or hang.
         await self._scheduler.on_job_completed(job, backend_id, total_tokens)
 
-        await self.db.commit()
+        # DB bookkeeping — shielded from task cancellation so the commit
+        # can't be interrupted mid-flush (which corrupts the session and
+        # leaks the connection from the pool).
+        await asyncio.shield(self._do_complete_db(
+            db_request, backend_id, response, prompt_tokens,
+            completion_tokens, tokens_estimated, total_tokens,
+        ))
+
+    async def _do_complete_db(
+        self, db_request, backend_id, response, prompt_tokens,
+        completion_tokens, tokens_estimated, total_tokens,
+    ) -> None:
+        """DB writes for request completion (run inside asyncio.shield)."""
+        try:
+            await crud.update_request_completed(
+                self.db, db_request.id,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                tokens_estimated=tokens_estimated,
+            )
+
+            content = None
+            if "choices" in response and response["choices"]:
+                msg = response["choices"][0].get("message", {})
+                content = msg.get("content")
+
+            await crud.create_response(
+                self.db, db_request.id,
+                content=content,
+                finish_reason=response.get("choices", [{}])[0].get("finish_reason"),
+            )
+
+            await crud.create_usage_entry(
+                self.db,
+                user_id=db_request.user_id,
+                api_key_id=db_request.api_key_id,
+                request_id=db_request.id,
+                model=db_request.model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                is_estimated=tokens_estimated,
+                backend_id=backend_id,
+            )
+
+            await crud.update_quota_usage(self.db, db_request.user_id, total_tokens)
+            await crud.update_api_key_usage(self.db, db_request.api_key_id)
+
+            await self.db.commit()
+        except Exception:
+            try:
+                await self.db.rollback()
+            except Exception:
+                pass
 
     async def _complete_streaming_request(
         self,
@@ -716,41 +801,59 @@ class InferenceService:
         job: Job,
     ) -> None:
         """Complete a streaming request."""
-        # Estimate tokens
         prompt_tokens = job.estimated_prompt_tokens
         completion_tokens = self._scheduler.estimate_tokens(content)
-
-        await crud.update_request_completed(
-            self.db, db_request.id,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            tokens_estimated=True,
-        )
-
-        await crud.create_response(
-            self.db, db_request.id,
-            content=content,
-            chunk_count=chunk_count,
-            finish_reason="stop",
-        )
-
         total_tokens = prompt_tokens + completion_tokens
-        await crud.create_usage_entry(
-            self.db,
-            user_id=db_request.user_id,
-            api_key_id=db_request.api_key_id,
-            request_id=db_request.id,
-            model=db_request.model,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            is_estimated=True,
-            backend_id=backend_id,
-        )
 
-        await crud.update_quota_usage(self.db, db_request.user_id, total_tokens)
+        # Release backend capacity FIRST
         await self._scheduler.on_job_completed(job, backend_id, total_tokens)
 
-        await self.db.commit()
+        await asyncio.shield(self._do_complete_streaming_db(
+            db_request, backend_id, content, chunk_count,
+            prompt_tokens, completion_tokens, total_tokens,
+        ))
+
+    async def _do_complete_streaming_db(
+        self, db_request, backend_id, content, chunk_count,
+        prompt_tokens, completion_tokens, total_tokens,
+    ) -> None:
+        """DB writes for streaming completion (run inside asyncio.shield)."""
+        try:
+            await crud.update_request_completed(
+                self.db, db_request.id,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                tokens_estimated=True,
+            )
+
+            await crud.create_response(
+                self.db, db_request.id,
+                content=content,
+                chunk_count=chunk_count,
+                finish_reason="stop",
+            )
+
+            await crud.create_usage_entry(
+                self.db,
+                user_id=db_request.user_id,
+                api_key_id=db_request.api_key_id,
+                request_id=db_request.id,
+                model=db_request.model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                is_estimated=True,
+                backend_id=backend_id,
+            )
+
+            await crud.update_quota_usage(self.db, db_request.user_id, total_tokens)
+            await crud.update_api_key_usage(self.db, db_request.api_key_id)
+
+            await self.db.commit()
+        except Exception:
+            try:
+                await self.db.rollback()
+            except Exception:
+                pass
 
     async def _fail_request(
         self,
@@ -760,12 +863,25 @@ class InferenceService:
         job: Job,
     ) -> None:
         """Record a failed request."""
-        await crud.update_request_failed(
-            self.db, db_request.id,
-            error_message=error_message,
-        )
-
+        # Release backend capacity FIRST
         if backend_id:
             await self._scheduler.on_job_failed(job, backend_id)
 
-        await self.db.commit()
+        await asyncio.shield(self._do_fail_db(db_request, error_message))
+
+    async def _do_fail_db(self, db_request, error_message: str) -> None:
+        """DB writes for failed request (run inside asyncio.shield)."""
+        try:
+            await crud.update_request_failed(
+                self.db, db_request.id,
+                error_message=error_message,
+            )
+
+            await crud.update_api_key_usage(self.db, db_request.api_key_id)
+
+            await self.db.commit()
+        except Exception:
+            try:
+                await self.db.rollback()
+            except Exception:
+                pass

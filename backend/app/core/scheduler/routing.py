@@ -67,6 +67,9 @@ class BackendRouter:
         self._backend_queue_depths: Dict[int, int] = {}
         self._lock = asyncio.Lock()
 
+        # Condition notified when a job completes/fails, so waiters can retry routing
+        self._capacity_condition = asyncio.Condition()
+
         # Background task handle
         self._cleanup_task: Optional[asyncio.Task] = None
 
@@ -252,6 +255,10 @@ class BackendRouter:
                     0, self._backend_queue_depths[backend_id] - 1
                 )
 
+        # Wake any requests waiting for capacity
+        async with self._capacity_condition:
+            self._capacity_condition.notify_all()
+
         logger.info(
             "job_completed",
             request_id=job.request_id,
@@ -275,11 +282,30 @@ class BackendRouter:
                     0, self._backend_queue_depths[backend_id] - 1
                 )
 
+        # Wake any requests waiting for capacity
+        async with self._capacity_condition:
+            self._capacity_condition.notify_all()
+
         logger.warning(
             "job_failed",
             request_id=job.request_id,
             backend_id=backend_id,
         )
+
+    async def wait_for_capacity(self, timeout: float = 5.0) -> bool:
+        """
+        Wait until backend capacity becomes available.
+
+        Returns True if signaled, False on timeout.
+        """
+        try:
+            async with self._capacity_condition:
+                await asyncio.wait_for(
+                    self._capacity_condition.wait(), timeout=timeout
+                )
+            return True
+        except asyncio.TimeoutError:
+            return False
 
     async def cancel_job(self, request_id: str) -> bool:
         """Cancel a queued job."""

@@ -132,8 +132,8 @@ async def authenticate_request(
             detail="User account is inactive",
         )
 
-    # Update last used
-    await crud.update_api_key_usage(db, api_key.id)
+    # NOTE: api_key usage update moved to request completion phase
+    # to avoid holding a row lock for the entire request duration.
 
     return user, api_key
 

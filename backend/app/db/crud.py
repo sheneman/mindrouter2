@@ -17,7 +17,7 @@
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Tuple
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -109,6 +109,65 @@ async def get_users(
     return list(result.scalars().all())
 
 
+async def delete_user(db: AsyncSession, user_id: int) -> bool:
+    """Hard-delete a user and all child rows (no CASCADE on FKs).
+
+    Deletion order matters due to foreign key constraints:
+    1. scheduler_decisions (FK -> requests)
+    2. responses (FK -> requests)
+    3. artifacts (FK -> requests)
+    4. usage_ledger (FK -> requests, api_keys, users)
+    5. requests (FK -> users, api_keys)
+    6. api_keys (FK -> users)
+    7. quotas (FK -> users)
+    8. quota_requests (FK -> users)
+    9. users
+    """
+    # Get request IDs for this user (needed for child tables of requests)
+    req_result = await db.execute(
+        select(Request.id).where(Request.user_id == user_id)
+    )
+    request_ids = [r for (r,) in req_result.all()]
+
+    if request_ids:
+        # Delete children of requests
+        await db.execute(
+            delete(SchedulerDecision).where(
+                SchedulerDecision.request_id.in_(request_ids)
+            )
+        )
+        await db.execute(
+            delete(Response).where(Response.request_id.in_(request_ids))
+        )
+        await db.execute(
+            delete(Artifact).where(Artifact.request_id.in_(request_ids))
+        )
+
+    # Delete direct children of user
+    await db.execute(
+        delete(UsageLedger).where(UsageLedger.user_id == user_id)
+    )
+    await db.execute(
+        delete(Request).where(Request.user_id == user_id)
+    )
+    await db.execute(
+        delete(ApiKey).where(ApiKey.user_id == user_id)
+    )
+    await db.execute(
+        delete(Quota).where(Quota.user_id == user_id)
+    )
+    await db.execute(
+        delete(QuotaRequest).where(QuotaRequest.user_id == user_id)
+    )
+
+    # Delete the user
+    result = await db.execute(
+        delete(User).where(User.id == user_id)
+    )
+    await db.flush()
+    return result.rowcount > 0
+
+
 # API Key CRUD
 async def get_api_key_by_hash(db: AsyncSession, key_hash: str) -> Optional[ApiKey]:
     """Get API key by hash."""
@@ -174,13 +233,19 @@ async def revoke_api_key(db: AsyncSession, api_key_id: int) -> Optional[ApiKey]:
 
 
 async def update_api_key_usage(db: AsyncSession, api_key_id: int) -> None:
-    """Update API key last used timestamp and usage count."""
-    result = await db.execute(select(ApiKey).where(ApiKey.id == api_key_id))
-    api_key = result.scalar_one_or_none()
-    if api_key:
-        api_key.last_used_at = datetime.now(timezone.utc)
-        api_key.usage_count += 1
-        await db.flush()
+    """Update API key last used timestamp and usage count.
+
+    Uses an atomic UPDATE to avoid loading the row into the ORM session,
+    which prevents holding an exclusive row lock for the entire request.
+    """
+    await db.execute(
+        update(ApiKey)
+        .where(ApiKey.id == api_key_id)
+        .values(
+            last_used_at=func.now(),
+            usage_count=ApiKey.usage_count + 1,
+        )
+    )
 
 
 # Quota CRUD

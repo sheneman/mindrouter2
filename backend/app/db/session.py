@@ -14,6 +14,7 @@
 
 """Database session management."""
 
+import asyncio
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager, contextmanager
 
@@ -54,6 +55,8 @@ async_engine = create_async_engine(
     max_overflow=settings.database_max_overflow,
     echo=settings.database_echo,
     pool_pre_ping=True,
+    pool_recycle=300,  # Recycle connections every 5 min
+    pool_timeout=10,  # Don't block forever waiting for a connection
 )
 
 AsyncSessionLocal = async_sessionmaker(
@@ -75,15 +78,38 @@ def get_db() -> Generator[Session, None, None]:
 
 
 async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
-    """Get async database session for FastAPI dependency injection."""
-    async with AsyncSessionLocal() as session:
+    """Get async database session for FastAPI dependency injection.
+
+    Uses asyncio.shield() to protect session cleanup from CancelledError,
+    which can corrupt connections and leak them from the pool.
+    """
+    session = AsyncSessionLocal()
+    try:
+        yield session
+    except asyncio.CancelledError:
+        # Shield rollback from further cancellation so the connection
+        # is properly returned to the pool instead of being leaked.
         try:
-            yield session
+            await asyncio.shield(session.rollback())
         except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
+            pass
+        raise
+    except Exception:
+        try:
+            await asyncio.shield(session.rollback())
+        except Exception:
+            pass
+        raise
+    finally:
+        try:
+            await asyncio.shield(session.close())
+        except Exception:
+            # Last resort: invalidate the connection so the pool discards it
+            # rather than leaving a corrupted connection in the pool.
+            try:
+                await session.invalidate()
+            except Exception:
+                pass
 
 
 @contextmanager

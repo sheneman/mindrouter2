@@ -239,6 +239,10 @@ class SchedulerPolicy:
         """Notify scheduler that a job has failed."""
         await self.router.on_job_failed(job, backend_id)
 
+    async def wait_for_capacity(self, timeout: float = 5.0) -> bool:
+        """Wait until backend capacity becomes available."""
+        return await self.router.wait_for_capacity(timeout)
+
     async def cancel_job(self, request_id: str) -> bool:
         """Cancel a queued job."""
         return await self.router.cancel_job(request_id)

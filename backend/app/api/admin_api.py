@@ -25,9 +25,12 @@ from backend.app.api.auth import require_admin
 from backend.app.core.scheduler.policy import get_scheduler
 from backend.app.core.telemetry.registry import get_registry
 from backend.app.db import crud
-from backend.app.db.models import BackendEngine, BackendStatus, RequestStatus, User
+from backend.app.db.models import BackendEngine, BackendStatus, RequestStatus, User, UserRole
 from backend.app.db.session import get_async_db
 from backend.app.logging_config import get_logger
+from backend.app.security.api_keys import generate_api_key
+from backend.app.security.password_hash import hash_password
+from backend.app.settings import get_settings
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -510,3 +513,192 @@ async def review_quota_request(
     )
 
     return {"status": "reviewed", "approved": review.approved}
+
+
+# User & API Key Provisioning
+class CreateUserRequest(BaseModel):
+    """Request to create a new user."""
+    username: str = Field(..., min_length=1, max_length=100)
+    email: str = Field(..., min_length=3, max_length=255)
+    password: str = Field(..., min_length=8)
+    role: UserRole = UserRole.STUDENT
+    full_name: Optional[str] = None
+
+
+class CreateUserResponse(BaseModel):
+    """Response after creating a user."""
+    id: int
+    uuid: str
+    username: str
+    email: str
+    role: str
+    full_name: Optional[str]
+    is_active: bool
+
+
+class CreateApiKeyRequest(BaseModel):
+    """Request to create an API key for a user."""
+    name: str = Field(..., min_length=1, max_length=100)
+    expires_at: Optional[datetime] = None
+
+
+class CreateApiKeyResponse(BaseModel):
+    """Response after creating an API key (full_key only available at creation)."""
+    id: int
+    key_prefix: str
+    full_key: str
+    name: str
+
+
+@router.post("/users", response_model=CreateUserResponse)
+async def create_user(
+    request: CreateUserRequest,
+    admin: User = Depends(require_admin()),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Create a new user with quota defaults for their role."""
+    # Check for duplicate username
+    existing = await crud.get_user_by_username(db, request.username)
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Username '{request.username}' already exists",
+        )
+
+    # Check for duplicate email
+    existing = await crud.get_user_by_email(db, request.email)
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Email '{request.email}' already exists",
+        )
+
+    # Hash password and create user
+    pw_hash = hash_password(request.password)
+    user = await crud.create_user(
+        db,
+        username=request.username,
+        email=request.email,
+        password_hash=pw_hash,
+        role=request.role,
+        full_name=request.full_name,
+    )
+
+    # Create quota with role-based defaults
+    settings = get_settings()
+    defaults = settings.get_quota_defaults(request.role.value)
+    await crud.create_quota(
+        db,
+        user_id=user.id,
+        token_budget=defaults["token_budget"],
+        rpm_limit=defaults["rpm"],
+        max_concurrent=defaults["max_concurrent"],
+    )
+
+    await db.commit()
+
+    logger.info(
+        "user_created_by_admin",
+        admin_id=admin.id,
+        user_id=user.id,
+        username=user.username,
+        role=user.role.value,
+    )
+
+    return CreateUserResponse(
+        id=user.id,
+        uuid=user.uuid,
+        username=user.username,
+        email=user.email,
+        role=user.role.value,
+        full_name=user.full_name,
+        is_active=user.is_active,
+    )
+
+
+@router.post("/users/{user_id}/api-keys", response_model=CreateApiKeyResponse)
+async def create_user_api_key(
+    user_id: int,
+    request: CreateApiKeyRequest,
+    admin: User = Depends(require_admin()),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Create an API key for a user. The full key is only returned once."""
+    # Verify user exists
+    user = await crud.get_user_by_id(db, user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    # Generate key
+    full_key, key_hash, key_prefix = generate_api_key()
+
+    # Create record
+    api_key = await crud.create_api_key(
+        db,
+        user_id=user_id,
+        key_hash=key_hash,
+        key_prefix=key_prefix,
+        name=request.name,
+        expires_at=request.expires_at,
+    )
+
+    await db.commit()
+
+    logger.info(
+        "api_key_created_by_admin",
+        admin_id=admin.id,
+        user_id=user_id,
+        api_key_id=api_key.id,
+        key_prefix=key_prefix,
+    )
+
+    return CreateApiKeyResponse(
+        id=api_key.id,
+        key_prefix=key_prefix,
+        full_key=full_key,
+        name=api_key.name,
+    )
+
+
+@router.delete("/users/{user_id}")
+async def delete_user(
+    user_id: int,
+    admin: User = Depends(require_admin()),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Hard-delete a user and all associated data. Cannot delete yourself."""
+    # Prevent self-deletion
+    if user_id == admin.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete your own account",
+        )
+
+    # Verify user exists
+    user = await crud.get_user_by_id(db, user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    deleted = await crud.delete_user(db, user_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete user",
+        )
+
+    await db.commit()
+
+    logger.info(
+        "user_deleted_by_admin",
+        admin_id=admin.id,
+        deleted_user_id=user_id,
+        deleted_username=user.username,
+    )
+
+    return {"status": "deleted", "user_id": user_id}
