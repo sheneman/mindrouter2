@@ -561,9 +561,21 @@ class InferenceService:
         last_error: Optional[Exception] = None
 
         for attempt in range(max_attempts):
-            backend, _models = await self._route_request(
-                job, user, modality, exclude_backend_ids=tried_backends or None,
-            )
+            try:
+                backend, _models = await self._route_request(
+                    job, user, modality, exclude_backend_ids=tried_backends or None,
+                )
+            except HTTPException:
+                # No routable backends with exclusions — clear exclusions so we
+                # can retry a previously-tried backend (e.g. single-backend model
+                # with a transient 5xx).
+                if tried_backends:
+                    tried_backends.clear()
+                    backend, _models = await self._route_request(
+                        job, user, modality,
+                    )
+                else:
+                    raise
             tried_backends.add(backend.id)
             start_time = time.monotonic()
 
@@ -644,9 +656,18 @@ class InferenceService:
         last_error: Optional[Exception] = None
 
         for attempt in range(max_attempts):
-            backend, _models = await self._route_request(
-                job, user, modality, exclude_backend_ids=tried_backends or None,
-            )
+            try:
+                backend, _models = await self._route_request(
+                    job, user, modality, exclude_backend_ids=tried_backends or None,
+                )
+            except HTTPException:
+                if tried_backends:
+                    tried_backends.clear()
+                    backend, _models = await self._route_request(
+                        job, user, modality,
+                    )
+                else:
+                    raise
             tried_backends.add(backend.id)
             start_time = time.monotonic()
             first_chunk_received = False
