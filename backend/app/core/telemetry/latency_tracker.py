@@ -92,6 +92,7 @@ class LatencyTracker:
             for b in backends:
                 if getattr(b, "latency_ema_ms", None) is not None:
                     self._latency_ema[b.id] = b.latency_ema_ms
+                    self._observation_count[b.id] = 1
                 if getattr(b, "ttft_ema_ms", None) is not None:
                     self._ttft_ema[b.id] = b.ttft_ema_ms
 
