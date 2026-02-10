@@ -389,6 +389,14 @@ class BackendRegistry:
                 )
 
         logger.info("node_registered", node_id=node.id, name=name)
+
+        # Immediately poll the sidecar to discover GPUs
+        if sidecar_url and node.id in self._sidecar_clients:
+            try:
+                await self._collect_node_telemetry(node.id)
+            except Exception as e:
+                logger.warning("initial_sidecar_poll_failed", node_id=node.id, error=str(e))
+
         return node
 
     async def remove_node(self, node_id: int) -> bool:
