@@ -117,29 +117,29 @@ After running the seed script:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        MindRouter2 Gateway                       │
+│                        MindRouter2 Gateway                      │
 ├─────────────────────────────────────────────────────────────────┤
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐ │
 │  │ OpenAI   │  │ Ollama   │  │ Admin    │  │ Dashboard        │ │
 │  │ /v1/*    │  │ /api/*   │  │ API      │  │ (Bootstrap)      │ │
 │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────────┬─────────┘ │
-│       │             │             │                  │           │
-│       └─────────────┴─────────────┴──────────────────┘           │
-│                              │                                   │
+│       │             │             │                 │           │
+│       └─────────────┴─────────────┴─────────────────┘           │
+│                              │                                  │
 │  ┌───────────────────────────┴───────────────────────────────┐  │
-│  │                    Translation Layer                       │  │
+│  │                    Translation Layer                      │  │
 │  │  OpenAI ←→ Canonical ←→ Ollama/vLLM                       │  │
 │  └───────────────────────────┬───────────────────────────────┘  │
-│                              │                                   │
+│                              │                                  │
 │  ┌───────────────────────────┴───────────────────────────────┐  │
-│  │              Fair-Share Scheduler (WDRR)                   │  │
+│  │              Fair-Share Scheduler (WDRR)                  │  │
 │  │  • Per-user queues with deficit counters                  │  │
 │  │  • Role-based weights (faculty > staff > student)         │  │
 │  │  • Burst credits for idle cluster utilization             │  │
 │  └───────────────────────────┬───────────────────────────────┘  │
-│                              │                                   │
+│                              │                                  │
 │  ┌───────────────────────────┴───────────────────────────────┐  │
-│  │                  Backend Registry                          │  │
+│  │                  Backend Registry                         │  │
 │  │  • Node + Backend separation (1 node → N backends)        │  │
 │  │  • Per-node sidecar polling (deduplicated)                │  │
 │  │  • GPU-to-backend assignment via gpu_indices              │  │
