@@ -109,7 +109,7 @@ A lightweight FastAPI service (`sidecar/gpu_agent.py`) that runs on each physica
 - `GET /health` - Liveness check, returns GPU count
 - `GET /gpu-info` - Full GPU metrics (utilization, memory, temperature, power, clocks, processes)
 
-**Deployment:** Runs as a Docker container with `--gpus all` or directly via Python on each GPU node. Exposes port 9101 by default.
+**Deployment:** Runs as a Docker container with `--gpus all` or directly via Python on each GPU node. Exposes port 8007 by default.
 
 ### 5. Backend Scorer
 

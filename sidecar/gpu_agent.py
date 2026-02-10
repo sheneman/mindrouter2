@@ -252,6 +252,6 @@ async def gpu_info(_: None = Depends(verify_sidecar_key)):
 if __name__ == "__main__":
     import uvicorn
 
-    port = int(os.environ.get("GPU_AGENT_PORT", "9101"))
+    port = int(os.environ.get("GPU_AGENT_PORT", "8007"))
     host = os.environ.get("GPU_AGENT_HOST", "0.0.0.0")
     uvicorn.run(app, host=host, port=port)

@@ -12,12 +12,12 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 
 COPY gpu_agent.py .
 
-ENV GPU_AGENT_PORT=9101
+ENV GPU_AGENT_PORT=8007
 ENV GPU_AGENT_HOST=0.0.0.0
 
-EXPOSE 9101
+EXPOSE 8007
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:9101/health')" || exit 1
+    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8007/health')" || exit 1
 
-CMD ["python3", "-m", "uvicorn", "gpu_agent:app", "--host", "0.0.0.0", "--port", "9101"]
+CMD ["python3", "-m", "uvicorn", "gpu_agent:app", "--host", "0.0.0.0", "--port", "8007"]

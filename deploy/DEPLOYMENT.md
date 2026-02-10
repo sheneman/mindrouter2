@@ -153,19 +153,19 @@ cd /opt/mindrouter-sidecar
 docker build -t mindrouter-sidecar -f Dockerfile.sidecar .
 docker run -d --name gpu-sidecar \
   --gpus all \
-  -p 9101:9101 \
+  -p 8007:8007 \
   --restart unless-stopped \
   mindrouter-sidecar
 
 # Verify it's working
-curl http://localhost:9101/health
-curl http://localhost:9101/gpu-info
+curl http://localhost:8007/health
+curl http://localhost:8007/gpu-info
 ```
 
 ```bash
 # Option B: Run directly (no Docker)
 pip install fastapi uvicorn nvidia-ml-py
-GPU_AGENT_PORT=9101 python gpu_agent.py
+GPU_AGENT_PORT=8007 python gpu_agent.py
 ```
 
 ### Register the node in MindRouter2:
@@ -178,7 +178,7 @@ curl -X POST https://mindrouter.example.com/api/admin/nodes/register \
   -d '{
     "name": "gpu-server-1",
     "hostname": "gpu1.example.com",
-    "sidecar_url": "http://gpu1.example.com:9101"
+    "sidecar_url": "http://gpu1.example.com:8007"
   }'
 ```
 
@@ -228,14 +228,14 @@ curl -k https://mindrouter.example.com/healthz
 docker compose -f docker-compose.prod.yml ps
 
 # Verify sidecar connectivity (from MindRouter2 server)
-curl http://gpu1.example.com:9101/health
+curl http://gpu1.example.com:8007/health
 
 # Verify node appears in telemetry
 curl -H "Authorization: Bearer admin-api-key" \
   https://mindrouter.example.com/api/admin/telemetry/overview
 ```
 
-**Firewall note:** The MindRouter2 server needs network access to each GPU node's sidecar port (default 9101). Ensure firewall rules allow this traffic between the gateway and GPU nodes.
+**Firewall note:** The MindRouter2 server needs network access to each GPU node's sidecar port (default 8007). Ensure firewall rules allow this traffic between the gateway and GPU nodes.
 
 ## Ongoing Operations
 
@@ -323,5 +323,5 @@ docker compose -f docker-compose.prod.yml exec app \
 - [ ] Redis not exposed externally
 - [ ] CORS_ORIGINS set to actual domain
 - [ ] Disabled DEBUG mode
-- [ ] GPU sidecar ports (9101) not exposed to public internet
+- [ ] GPU sidecar ports (8007) not exposed to public internet
 - [ ] Sidecar agents running on all GPU nodes

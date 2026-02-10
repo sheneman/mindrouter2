@@ -104,9 +104,9 @@ services:
       context: ./sidecar
       dockerfile: Dockerfile.sidecar
     ports:
-      - "9101:9101"
+      - "8007:8007"
     environment:
-      - GPU_AGENT_PORT=9101
+      - GPU_AGENT_PORT=8007
       - GPU_AGENT_HOST=0.0.0.0
       - SIDECAR_SECRET_KEY=${SIDECAR_SECRET_KEY}
     networks:

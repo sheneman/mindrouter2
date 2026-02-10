@@ -154,7 +154,7 @@ After running the seed script:
    │  4x A100    │      │  2x L40S    │      │  2x RTX4090 │
    │ ┌─────────┐ │      │ ┌─────────┐ │      │ ┌─────────┐ │
    │ │ Sidecar │ │      │ │ Sidecar │ │      │ │ Sidecar │ │
-   │ │ :9101   │ │      │ │ :9101   │ │      │ │ :9101   │ │
+   │ │ :8007   │ │      │ │ :8007   │ │      │ │ :8007   │ │
    │ └─────────┘ │      │ └─────────┘ │      │ └─────────┘ │
    │ ┌────┬────┐ │      │ ┌─────────┐ │      │ ┌─────────┐ │
    │ │vLLM│vLLM│ │      │ │  Ollama │ │      │ │  Ollama │ │
@@ -181,7 +181,7 @@ Key settings:
 | `ARTIFACT_STORAGE_PATH` | Path for uploaded files | `/data/artifacts` |
 | `DEFAULT_TOKEN_BUDGET` | Monthly token allowance | 100000 |
 | `SCHEDULER_FAIRNESS_WINDOW` | Rolling window for usage tracking | 300 (5 min) |
-| `GPU_AGENT_PORT` | Sidecar agent listen port | 9101 |
+| `GPU_AGENT_PORT` | Sidecar agent listen port | 8007 |
 
 ### Node and Backend Registration
 
@@ -195,7 +195,7 @@ curl -X POST http://localhost:8000/api/admin/nodes/register \
   -d '{
     "name": "gpu-server-1",
     "hostname": "gpu1.example.com",
-    "sidecar_url": "http://gpu1.example.com:9101"
+    "sidecar_url": "http://gpu1.example.com:8007"
   }'
 
 # Step 2: Register a backend on that node (all GPUs)
@@ -367,7 +367,7 @@ docker compose --profile gpu up gpu-sidecar
 docker build -t mindrouter-sidecar -f sidecar/Dockerfile.sidecar sidecar/
 docker run -d --name gpu-sidecar \
   --gpus all \
-  -p 9101:9101 \
+  -p 8007:8007 \
   -e SIDECAR_SECRET_KEY=your-generated-key \
   --restart unless-stopped \
   mindrouter-sidecar
@@ -379,7 +379,7 @@ docker run -d --name gpu-sidecar \
 # On each GPU server:
 pip install fastapi uvicorn nvidia-ml-py
 cd sidecar/
-SIDECAR_SECRET_KEY=your-generated-key GPU_AGENT_PORT=9101 python gpu_agent.py
+SIDECAR_SECRET_KEY=your-generated-key GPU_AGENT_PORT=8007 python gpu_agent.py
 ```
 
 ### Registering nodes with sidecars
@@ -393,7 +393,7 @@ curl -X POST http://mindrouter:8000/api/admin/nodes/register \
   -d '{
     "name": "gpu-server-1",
     "hostname": "gpu1.example.com",
-    "sidecar_url": "http://gpu1.example.com:9101",
+    "sidecar_url": "http://gpu1.example.com:8007",
     "sidecar_key": "your-generated-key"
   }'
 ```
@@ -405,7 +405,7 @@ Or use the admin dashboard at `/admin/nodes` to register nodes and view GPU tele
 A single GPU server can host multiple inference endpoints. Assign specific GPUs to each backend using `gpu_indices`:
 
 ```
-Node: gpu-server-1 (4x A100-80GB, sidecar at :9101)
+Node: gpu-server-1 (4x A100-80GB, sidecar at :8007)
 ├── Backend: vllm-large  (gpu_indices: [0, 1])  ← uses GPUs 0-1
 ├── Backend: vllm-small  (gpu_indices: [2])      ← uses GPU 2
 └── Backend: ollama-misc (gpu_indices: [3])      ← uses GPU 3

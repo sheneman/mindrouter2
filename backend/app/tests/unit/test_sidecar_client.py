@@ -112,23 +112,23 @@ class TestSidecarClientInit:
     """Test SidecarClient initialization."""
 
     def test_strips_trailing_slash(self):
-        client = SidecarClient("http://gpu-node:9101/")
-        assert client.base_url == "http://gpu-node:9101"
+        client = SidecarClient("http://gpu-node:8007/")
+        assert client.base_url == "http://gpu-node:8007"
 
     def test_sets_timeout(self):
-        client = SidecarClient("http://gpu-node:9101", timeout=10.0)
+        client = SidecarClient("http://gpu-node:8007", timeout=10.0)
         assert client.timeout == 10.0
 
     def test_default_timeout(self):
-        client = SidecarClient("http://gpu-node:9101")
+        client = SidecarClient("http://gpu-node:8007")
         assert client.timeout == 5.0
 
     def test_stores_sidecar_key(self):
-        client = SidecarClient("http://gpu-node:9101", sidecar_key="secret123")
+        client = SidecarClient("http://gpu-node:8007", sidecar_key="secret123")
         assert client.sidecar_key == "secret123"
 
     def test_default_sidecar_key_is_none(self):
-        client = SidecarClient("http://gpu-node:9101")
+        client = SidecarClient("http://gpu-node:8007")
         assert client.sidecar_key is None
 
 
@@ -136,7 +136,7 @@ class TestParseResponse:
     """Test _parse_response method."""
 
     def test_parses_full_response(self):
-        client = SidecarClient("http://gpu-node:9101")
+        client = SidecarClient("http://gpu-node:8007")
         result = client._parse_response(SAMPLE_GPU_RESPONSE)
 
         assert isinstance(result, SidecarResponse)
@@ -147,7 +147,7 @@ class TestParseResponse:
         assert len(result.gpus) == 2
 
     def test_parses_gpu_details(self):
-        client = SidecarClient("http://gpu-node:9101")
+        client = SidecarClient("http://gpu-node:8007")
         result = client._parse_response(SAMPLE_GPU_RESPONSE)
 
         gpu0 = result.gpus[0]
@@ -164,7 +164,7 @@ class TestParseResponse:
         assert gpu0.clock_sm_mhz == 1410
 
     def test_parses_second_gpu(self):
-        client = SidecarClient("http://gpu-node:9101")
+        client = SidecarClient("http://gpu-node:8007")
         result = client._parse_response(SAMPLE_GPU_RESPONSE)
 
         gpu1 = result.gpus[1]
@@ -174,14 +174,14 @@ class TestParseResponse:
         assert gpu1.memory_used_gb == 12.0
 
     def test_handles_empty_gpus(self):
-        client = SidecarClient("http://gpu-node:9101")
+        client = SidecarClient("http://gpu-node:8007")
         result = client._parse_response({"hostname": "node", "gpu_count": 0, "gpus": []})
 
         assert result.gpu_count == 0
         assert result.gpus == []
 
     def test_handles_missing_fields(self):
-        client = SidecarClient("http://gpu-node:9101")
+        client = SidecarClient("http://gpu-node:8007")
         data = {
             "hostname": "node",
             "gpus": [{"index": 0, "name": "Test GPU"}],
@@ -201,14 +201,14 @@ class TestSidecarKeyHeader:
 
     @pytest.mark.asyncio
     async def test_get_client_includes_key_header(self):
-        client = SidecarClient("http://gpu-node:9101", sidecar_key="my-secret")
+        client = SidecarClient("http://gpu-node:8007", sidecar_key="my-secret")
         http_client = await client._get_client()
         assert http_client.headers.get("X-Sidecar-Key") == "my-secret"  # type: ignore[union-attr]
         await client.close()
 
     @pytest.mark.asyncio
     async def test_get_client_no_key_header_when_none(self):
-        client = SidecarClient("http://gpu-node:9101")
+        client = SidecarClient("http://gpu-node:8007")
         http_client = await client._get_client()
         assert "X-Sidecar-Key" not in http_client.headers  # type: ignore[union-attr]
         await client.close()
@@ -219,7 +219,7 @@ class TestGetGpuInfo:
 
     @pytest.mark.asyncio
     async def test_successful_fetch(self):
-        client = SidecarClient("http://gpu-node:9101")
+        client = SidecarClient("http://gpu-node:8007")
 
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -239,7 +239,7 @@ class TestGetGpuInfo:
 
     @pytest.mark.asyncio
     async def test_bad_status_returns_none(self):
-        client = SidecarClient("http://gpu-node:9101")
+        client = SidecarClient("http://gpu-node:8007")
 
         mock_response = MagicMock()
         mock_response.status_code = 503
@@ -256,7 +256,7 @@ class TestGetGpuInfo:
     async def test_timeout_returns_none(self):
         import httpx
 
-        client = SidecarClient("http://gpu-node:9101")
+        client = SidecarClient("http://gpu-node:8007")
 
         mock_http_client = AsyncMock()
         mock_http_client.get = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
@@ -270,7 +270,7 @@ class TestGetGpuInfo:
     async def test_connection_error_returns_none(self):
         import httpx
 
-        client = SidecarClient("http://gpu-node:9101")
+        client = SidecarClient("http://gpu-node:8007")
 
         mock_http_client = AsyncMock()
         mock_http_client.get = AsyncMock(
@@ -288,7 +288,7 @@ class TestHealthCheck:
 
     @pytest.mark.asyncio
     async def test_healthy_returns_true(self):
-        client = SidecarClient("http://gpu-node:9101")
+        client = SidecarClient("http://gpu-node:8007")
 
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -302,7 +302,7 @@ class TestHealthCheck:
 
     @pytest.mark.asyncio
     async def test_unhealthy_returns_false(self):
-        client = SidecarClient("http://gpu-node:9101")
+        client = SidecarClient("http://gpu-node:8007")
 
         mock_response = MagicMock()
         mock_response.status_code = 503
@@ -316,7 +316,7 @@ class TestHealthCheck:
 
     @pytest.mark.asyncio
     async def test_error_returns_false(self):
-        client = SidecarClient("http://gpu-node:9101")
+        client = SidecarClient("http://gpu-node:8007")
 
         mock_http_client = AsyncMock()
         mock_http_client.get = AsyncMock(side_effect=Exception("unreachable"))
@@ -331,7 +331,7 @@ class TestClose:
 
     @pytest.mark.asyncio
     async def test_close_client(self):
-        client = SidecarClient("http://gpu-node:9101")
+        client = SidecarClient("http://gpu-node:8007")
 
         mock_http_client = AsyncMock()
         mock_http_client.is_closed = False
@@ -342,7 +342,7 @@ class TestClose:
 
     @pytest.mark.asyncio
     async def test_close_when_already_closed(self):
-        client = SidecarClient("http://gpu-node:9101")
+        client = SidecarClient("http://gpu-node:8007")
 
         mock_http_client = AsyncMock()
         mock_http_client.is_closed = True
@@ -353,5 +353,5 @@ class TestClose:
 
     @pytest.mark.asyncio
     async def test_close_when_no_client(self):
-        client = SidecarClient("http://gpu-node:9101")
+        client = SidecarClient("http://gpu-node:8007")
         await client.close()  # Should not raise
