@@ -100,11 +100,9 @@ def upgrade() -> None:
     )
 
     # 6. Drop old gpu_devices.backend_id FK and column, make node_id NOT NULL
-    # Drop the old unique index first
-    op.drop_index('ix_gpu_devices_backend_index', table_name='gpu_devices')
-
-    # Drop the FK constraint on backend_id (constraint name may vary)
+    # Drop the FK constraint first (MariaDB won't drop an index backing an FK)
     op.drop_constraint('gpu_devices_ibfk_1', 'gpu_devices', type_='foreignkey')
+    op.drop_index('ix_gpu_devices_backend_index', table_name='gpu_devices')
     op.drop_column('gpu_devices', 'backend_id')
 
     # Make node_id NOT NULL and add FK
@@ -113,8 +111,8 @@ def upgrade() -> None:
     op.create_index('ix_gpu_devices_node_index', 'gpu_devices', ['node_id', 'gpu_index'], unique=True)
 
     # 7. Drop gpu_device_telemetry.backend_id column and index
-    op.drop_index('ix_gpu_device_telemetry_backend_time', table_name='gpu_device_telemetry')
     op.drop_constraint('gpu_device_telemetry_ibfk_2', 'gpu_device_telemetry', type_='foreignkey')
+    op.drop_index('ix_gpu_device_telemetry_backend_time', table_name='gpu_device_telemetry')
     op.drop_column('gpu_device_telemetry', 'backend_id')
 
     # 8. Drop sidecar/hardware columns from backends
