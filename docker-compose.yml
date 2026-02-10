@@ -108,6 +108,7 @@ services:
     environment:
       - GPU_AGENT_PORT=9101
       - GPU_AGENT_HOST=0.0.0.0
+      - SIDECAR_SECRET_KEY=${SIDECAR_SECRET_KEY}
     networks:
       - mindrouter_network
     profiles:

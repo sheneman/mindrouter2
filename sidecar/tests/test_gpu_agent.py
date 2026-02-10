@@ -8,12 +8,17 @@
 
 """Unit tests for the GPU sidecar agent with mocked pynvml."""
 
+import os
 import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
+
+# ---- Set required env var before importing the agent ----
+TEST_SECRET_KEY = "test-secret-key-for-unit-tests"
+os.environ["SIDECAR_SECRET_KEY"] = TEST_SECRET_KEY
 
 # ---- Create mock pynvml before importing the agent ----
 mock_pynvml = MagicMock()
@@ -26,6 +31,9 @@ sys.modules["pynvml"] = mock_pynvml
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1]))
 from gpu_agent import app, _init_nvml, _get_gpu_info
 import gpu_agent
+
+# Auth header for all authenticated requests
+AUTH_HEADER = {"X-Sidecar-Key": TEST_SECRET_KEY}
 
 
 # ---- Fixtures ----
@@ -99,6 +107,52 @@ def setup_mock_pynvml(device_count=2):
     return handles
 
 
+class TestAuth:
+    """Test sidecar key authentication."""
+
+    def test_health_returns_401_without_key(self, client):
+        setup_mock_pynvml(device_count=1)
+        _init_nvml()
+
+        response = client.get("/health")
+        assert response.status_code == 401
+
+    def test_health_returns_401_with_wrong_key(self, client):
+        setup_mock_pynvml(device_count=1)
+        _init_nvml()
+
+        response = client.get("/health", headers={"X-Sidecar-Key": "wrong-key"})
+        assert response.status_code == 401
+
+    def test_health_returns_200_with_correct_key(self, client):
+        setup_mock_pynvml(device_count=1)
+        _init_nvml()
+
+        response = client.get("/health", headers=AUTH_HEADER)
+        assert response.status_code == 200
+
+    def test_gpu_info_returns_401_without_key(self, client):
+        setup_mock_pynvml(device_count=1)
+        _init_nvml()
+
+        response = client.get("/gpu-info")
+        assert response.status_code == 401
+
+    def test_gpu_info_returns_401_with_wrong_key(self, client):
+        setup_mock_pynvml(device_count=1)
+        _init_nvml()
+
+        response = client.get("/gpu-info", headers={"X-Sidecar-Key": "bad"})
+        assert response.status_code == 401
+
+    def test_gpu_info_returns_200_with_correct_key(self, client):
+        setup_mock_pynvml(device_count=1)
+        _init_nvml()
+
+        response = client.get("/gpu-info", headers=AUTH_HEADER)
+        assert response.status_code == 200
+
+
 class TestHealth:
     """Test /health endpoint."""
 
@@ -106,14 +160,14 @@ class TestHealth:
         setup_mock_pynvml(device_count=2)
         _init_nvml()
 
-        response = client.get("/health")
+        response = client.get("/health", headers=AUTH_HEADER)
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "ok"
         assert data["gpu_count"] == 2
 
     def test_health_when_not_initialized(self, client):
-        response = client.get("/health")
+        response = client.get("/health", headers=AUTH_HEADER)
         assert response.status_code == 503
         data = response.json()
         assert data["status"] == "error"
@@ -122,7 +176,7 @@ class TestHealth:
         mock_pynvml.nvmlInit.side_effect = Exception("No NVIDIA driver")
         _init_nvml()
 
-        response = client.get("/health")
+        response = client.get("/health", headers=AUTH_HEADER)
         assert response.status_code == 503
         data = response.json()
         assert "No NVIDIA driver" in data["error"]
@@ -132,7 +186,7 @@ class TestGpuInfo:
     """Test /gpu-info endpoint."""
 
     def test_gpu_info_when_not_initialized(self, client):
-        response = client.get("/gpu-info")
+        response = client.get("/gpu-info", headers=AUTH_HEADER)
         assert response.status_code == 503
         data = response.json()
         assert data["gpu_count"] == 0
@@ -142,7 +196,7 @@ class TestGpuInfo:
         setup_mock_pynvml(device_count=2)
         _init_nvml()
 
-        response = client.get("/gpu-info")
+        response = client.get("/gpu-info", headers=AUTH_HEADER)
         assert response.status_code == 200
         data = response.json()
 
@@ -157,7 +211,7 @@ class TestGpuInfo:
         setup_mock_pynvml(device_count=1)
         _init_nvml()
 
-        response = client.get("/gpu-info")
+        response = client.get("/gpu-info", headers=AUTH_HEADER)
         data = response.json()
         gpu = data["gpus"][0]
 
@@ -186,7 +240,7 @@ class TestGpuInfo:
 
         mock_pynvml.nvmlDeviceGetHandleByIndex.side_effect = failing_handle
 
-        response = client.get("/gpu-info")
+        response = client.get("/gpu-info", headers=AUTH_HEADER)
         assert response.status_code == 200
         data = response.json()
 

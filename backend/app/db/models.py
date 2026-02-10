@@ -273,6 +273,9 @@ class Node(Base, TimestampMixin):
         Enum(NodeStatus, values_callable=_enum_values), nullable=False, default=NodeStatus.UNKNOWN
     )
 
+    # Sidecar authentication
+    sidecar_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
     # Hardware info (populated by sidecar)
     gpu_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     driver_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
@@ -291,7 +294,7 @@ class Backend(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
-    url: Mapped[str] = mapped_column(String(500), nullable=False)
+    url: Mapped[str] = mapped_column(String(500), unique=True, nullable=False)
     engine: Mapped[BackendEngine] = mapped_column(Enum(BackendEngine, values_callable=_enum_values), nullable=False)
     status: Mapped[BackendStatus] = mapped_column(
         Enum(BackendStatus, values_callable=_enum_values), nullable=False, default=BackendStatus.UNKNOWN

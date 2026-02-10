@@ -42,6 +42,7 @@ class NodeRegisterRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     hostname: Optional[str] = None
     sidecar_url: Optional[str] = None
+    sidecar_key: Optional[str] = None
 
 
 class NodeResponse(BaseModel):
@@ -50,6 +51,7 @@ class NodeResponse(BaseModel):
     name: str
     hostname: Optional[str]
     sidecar_url: Optional[str]
+    sidecar_key_set: bool = False
     status: str
     gpu_count: Optional[int]
     driver_version: Optional[str]
@@ -151,6 +153,14 @@ async def register_backend(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Backend with name '{request.name}' already exists",
+        )
+
+    # Check for duplicate URL
+    existing_url = await crud.get_backend_by_url(db, request.url)
+    if existing_url:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Backend with URL '{request.url}' already exists (registered as '{existing_url.name}')",
         )
 
     registry = get_registry()
@@ -330,6 +340,7 @@ async def register_node(
         name=request.name,
         hostname=request.hostname,
         sidecar_url=request.sidecar_url,
+        sidecar_key=request.sidecar_key,
     )
 
     logger.info(
@@ -344,6 +355,7 @@ async def register_node(
         name=node.name,
         hostname=node.hostname,
         sidecar_url=node.sidecar_url,
+        sidecar_key_set=bool(node.sidecar_key),
         status=node.status.value,
         gpu_count=node.gpu_count,
         driver_version=node.driver_version,
@@ -364,6 +376,7 @@ async def list_nodes(
             name=n.name,
             hostname=n.hostname,
             sidecar_url=n.sidecar_url,
+            sidecar_key_set=bool(n.sidecar_key),
             status=n.status.value,
             gpu_count=n.gpu_count,
             driver_version=n.driver_version,

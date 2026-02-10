@@ -309,12 +309,14 @@ async def create_node(
     name: str,
     hostname: Optional[str] = None,
     sidecar_url: Optional[str] = None,
+    sidecar_key: Optional[str] = None,
 ) -> Node:
     """Create a new node."""
     node = Node(
         name=name,
         hostname=hostname,
         sidecar_url=sidecar_url,
+        sidecar_key=sidecar_key,
         status=NodeStatus.UNKNOWN,
     )
     db.add(node)
@@ -414,6 +416,12 @@ async def get_backend_by_id(db: AsyncSession, backend_id: int) -> Optional[Backe
 async def get_backend_by_name(db: AsyncSession, name: str) -> Optional[Backend]:
     """Get backend by name."""
     result = await db.execute(select(Backend).where(Backend.name == name))
+    return result.scalar_one_or_none()
+
+
+async def get_backend_by_url(db: AsyncSession, url: str) -> Optional[Backend]:
+    """Get backend by URL."""
+    result = await db.execute(select(Backend).where(Backend.url == url))
     return result.scalar_one_or_none()
 
 

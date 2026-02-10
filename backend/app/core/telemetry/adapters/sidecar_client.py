@@ -33,17 +33,22 @@ class SidecarClient:
     fetches and parses those metrics for storage in MindRouter2.
     """
 
-    def __init__(self, sidecar_url: str, timeout: float = 5.0):
+    def __init__(self, sidecar_url: str, timeout: float = 5.0, sidecar_key: Optional[str] = None):
         self.base_url = sidecar_url.rstrip("/")
         self.timeout = timeout
+        self.sidecar_key = sidecar_key
         self._client: Optional[httpx.AsyncClient] = None
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
         if self._client is None or self._client.is_closed:
+            headers = {}
+            if self.sidecar_key:
+                headers["X-Sidecar-Key"] = self.sidecar_key
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
                 timeout=self.timeout,
+                headers=headers,
             )
         return self._client
 

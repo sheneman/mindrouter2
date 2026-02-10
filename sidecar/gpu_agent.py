@@ -19,12 +19,33 @@
 """GPU metrics sidecar agent using NVIDIA Management Library (pynvml)."""
 
 import os
+import secrets
 import socket
+import sys
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
+
+# Require SIDECAR_SECRET_KEY at startup
+SIDECAR_SECRET_KEY = os.environ.get("SIDECAR_SECRET_KEY", "").strip()
+if not SIDECAR_SECRET_KEY:
+    print(
+        "FATAL: SIDECAR_SECRET_KEY environment variable is required but not set.\n"
+        "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\"",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
+async def verify_sidecar_key(x_sidecar_key: Optional[str] = Header(None)) -> None:
+    """Validate the X-Sidecar-Key header against the configured secret."""
+    if x_sidecar_key is None or not secrets.compare_digest(
+        x_sidecar_key, SIDECAR_SECRET_KEY
+    ):
+        raise HTTPException(status_code=401, detail="Invalid or missing sidecar key")
+
 
 app = FastAPI(title="MindRouter2 GPU Sidecar Agent", version="1.0.0")
 
@@ -187,7 +208,7 @@ async def startup():
 
 
 @app.get("/health")
-async def health():
+async def health(_: None = Depends(verify_sidecar_key)):
     """Health check endpoint."""
     if _initialized:
         return {"status": "ok", "gpu_count": _device_count}
@@ -198,7 +219,7 @@ async def health():
 
 
 @app.get("/gpu-info")
-async def gpu_info():
+async def gpu_info(_: None = Depends(verify_sidecar_key)):
     """Return detailed GPU metrics for all devices on this node."""
     if not _initialized:
         return JSONResponse(

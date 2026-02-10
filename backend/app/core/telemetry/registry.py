@@ -220,7 +220,9 @@ class BackendRegistry:
                         node = await crud.get_node_by_id(db_session, node_id)
                     if node and node.sidecar_url:
                         self._sidecar_clients[node_id] = SidecarClient(
-                            node.sidecar_url, timeout=self._settings.sidecar_timeout
+                            node.sidecar_url,
+                            timeout=self._settings.sidecar_timeout,
+                            sidecar_key=node.sidecar_key,
                         )
 
         # Run discovery outside the lock to avoid blocking telemetry reads
@@ -366,6 +368,7 @@ class BackendRegistry:
         name: str,
         hostname: Optional[str] = None,
         sidecar_url: Optional[str] = None,
+        sidecar_key: Optional[str] = None,
     ) -> Node:
         """Register a new physical node."""
         async with get_async_db_context() as db:
@@ -374,12 +377,15 @@ class BackendRegistry:
                 name=name,
                 hostname=hostname,
                 sidecar_url=sidecar_url,
+                sidecar_key=sidecar_key,
             )
 
         async with self._lock:
             if sidecar_url:
                 self._sidecar_clients[node.id] = SidecarClient(
-                    sidecar_url, timeout=self._settings.sidecar_timeout
+                    sidecar_url,
+                    timeout=self._settings.sidecar_timeout,
+                    sidecar_key=sidecar_key,
                 )
 
         logger.info("node_registered", node_id=node.id, name=name)
@@ -565,7 +571,9 @@ class BackendRegistry:
         for node in nodes:
             if node.sidecar_url:
                 self._sidecar_clients[node.id] = SidecarClient(
-                    node.sidecar_url, timeout=self._settings.sidecar_timeout
+                    node.sidecar_url,
+                    timeout=self._settings.sidecar_timeout,
+                    sidecar_key=node.sidecar_key,
                 )
 
         # Create adapters and build node-backend mappings

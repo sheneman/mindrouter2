@@ -515,6 +515,7 @@ async def register_node(
     name: str = Form(...),
     hostname: Optional[str] = Form(None),
     sidecar_url: Optional[str] = Form(None),
+    sidecar_key: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_async_db),
 ):
     """Register a new node."""
@@ -535,12 +536,14 @@ async def register_node(
 
         hostname_val = hostname if hostname else None
         sidecar_url_val = sidecar_url if sidecar_url else None
+        sidecar_key_val = sidecar_key if sidecar_key else None
 
         registry = get_registry()
         await registry.register_node(
             name=name,
             hostname=hostname_val,
             sidecar_url=sidecar_url_val,
+            sidecar_key=sidecar_key_val,
         )
         return RedirectResponse(url="/admin/nodes?success=registered", status_code=302)
     except Exception:

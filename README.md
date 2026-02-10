@@ -349,11 +349,13 @@ Each GPU node runs a lightweight **sidecar agent** (`sidecar/gpu_agent.py`) that
 
 ### Deploying the sidecar
 
-The sidecar must run on each physical GPU server. It requires NVIDIA drivers and the NVIDIA Container Toolkit.
+The sidecar must run on each physical GPU server. It requires NVIDIA drivers and the NVIDIA Container Toolkit. A `SIDECAR_SECRET_KEY` environment variable is **required** — the sidecar will refuse to start without it. Generate one with: `python -c "import secrets; print(secrets.token_hex(32))"`
 
 **Option A: Docker Compose (development)**
 
 ```bash
+# Set the key in .env or export it
+export SIDECAR_SECRET_KEY=your-generated-key
 # Start with the gpu profile (requires NVIDIA GPU on this machine)
 docker compose --profile gpu up gpu-sidecar
 ```
@@ -366,6 +368,7 @@ docker build -t mindrouter-sidecar -f sidecar/Dockerfile.sidecar sidecar/
 docker run -d --name gpu-sidecar \
   --gpus all \
   -p 9101:9101 \
+  -e SIDECAR_SECRET_KEY=your-generated-key \
   --restart unless-stopped \
   mindrouter-sidecar
 ```
@@ -376,12 +379,12 @@ docker run -d --name gpu-sidecar \
 # On each GPU server:
 pip install fastapi uvicorn nvidia-ml-py
 cd sidecar/
-GPU_AGENT_PORT=9101 python gpu_agent.py
+SIDECAR_SECRET_KEY=your-generated-key GPU_AGENT_PORT=9101 python gpu_agent.py
 ```
 
 ### Registering nodes with sidecars
 
-After starting the sidecar on a GPU server, register the node in MindRouter2:
+After starting the sidecar on a GPU server, register the node in MindRouter2. Include the same `sidecar_key` that was set as `SIDECAR_SECRET_KEY` on the sidecar:
 
 ```bash
 curl -X POST http://mindrouter:8000/api/admin/nodes/register \
@@ -390,7 +393,8 @@ curl -X POST http://mindrouter:8000/api/admin/nodes/register \
   -d '{
     "name": "gpu-server-1",
     "hostname": "gpu1.example.com",
-    "sidecar_url": "http://gpu1.example.com:9101"
+    "sidecar_url": "http://gpu1.example.com:9101",
+    "sidecar_key": "your-generated-key"
   }'
 ```
 
@@ -416,6 +420,7 @@ Each backend's telemetry (utilization, memory) is aggregated only from its assig
 - Rate limiting per key (RPM) and per user (concurrency)
 - All admin actions are audited
 - Request/response content logged for compliance review
+- GPU sidecar endpoints are authenticated via shared secret key (`X-Sidecar-Key` header, constant-time comparison)
 
 ## License
 

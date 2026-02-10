@@ -48,20 +48,25 @@
                 <div class="card-body">
                     <form method="POST" action="/admin/nodes/register">
                         <div class="row">
-                            <div class="col-md-4 mb-3">
+                            <div class="col-md-3 mb-3">
                                 <label for="name" class="form-label">Name</label>
                                 <input type="text" class="form-control" id="name" name="name" required
                                        placeholder="e.g., gpu-node-01">
                             </div>
-                            <div class="col-md-4 mb-3">
+                            <div class="col-md-3 mb-3">
                                 <label for="hostname" class="form-label">Hostname</label>
                                 <input type="text" class="form-control" id="hostname" name="hostname"
                                        placeholder="e.g., gpu-server-01.example.com">
                             </div>
-                            <div class="col-md-4 mb-3">
+                            <div class="col-md-3 mb-3">
                                 <label for="sidecar_url" class="form-label">Sidecar URL</label>
                                 <input type="text" class="form-control" id="sidecar_url" name="sidecar_url"
                                        placeholder="http://host:9101">
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <label for="sidecar_key" class="form-label">Sidecar Secret Key</label>
+                                <input type="password" class="form-control" id="sidecar_key" name="sidecar_key"
+                                       placeholder="Paste the SIDECAR_SECRET_KEY value">
                             </div>
                         </div>
                         <button type="submit" class="btn btn-primary">
@@ -117,6 +122,14 @@
                                     {% if item.node.sidecar_url %}
                                     <span class="badge bg-success">Connected</span>
                                     <small class="text-muted d-block">{{ item.node.sidecar_url }}</small>
+                                    {% else %}
+                                    <span class="badge bg-secondary">None</span>
+                                    {% endif %}
+                                </dd>
+                                <dt class="col-6">Key:</dt>
+                                <dd class="col-6">
+                                    {% if item.node.sidecar_key %}
+                                    <span class="badge bg-success">Configured</span>
                                     {% else %}
                                     <span class="badge bg-secondary">None</span>
                                     {% endif %}

@@ -123,6 +123,14 @@ class TestSidecarClientInit:
         client = SidecarClient("http://gpu-node:9101")
         assert client.timeout == 5.0
 
+    def test_stores_sidecar_key(self):
+        client = SidecarClient("http://gpu-node:9101", sidecar_key="secret123")
+        assert client.sidecar_key == "secret123"
+
+    def test_default_sidecar_key_is_none(self):
+        client = SidecarClient("http://gpu-node:9101")
+        assert client.sidecar_key is None
+
 
 class TestParseResponse:
     """Test _parse_response method."""
@@ -186,6 +194,24 @@ class TestParseResponse:
         assert len(result.gpus) == 1
         assert result.gpus[0].uuid is None
         assert result.gpus[0].memory_total_gb is None
+
+
+class TestSidecarKeyHeader:
+    """Test that X-Sidecar-Key header is sent when a key is configured."""
+
+    @pytest.mark.asyncio
+    async def test_get_client_includes_key_header(self):
+        client = SidecarClient("http://gpu-node:9101", sidecar_key="my-secret")
+        http_client = await client._get_client()
+        assert http_client.headers.get("X-Sidecar-Key") == "my-secret"  # type: ignore[union-attr]
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_get_client_no_key_header_when_none(self):
+        client = SidecarClient("http://gpu-node:9101")
+        http_client = await client._get_client()
+        assert "X-Sidecar-Key" not in http_client.headers  # type: ignore[union-attr]
+        await client.close()
 
 
 class TestGetGpuInfo:
