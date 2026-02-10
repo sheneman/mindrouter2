@@ -496,13 +496,25 @@ async def update_backend_status(
 
 
 async def delete_backend(db: AsyncSession, backend_id: int) -> bool:
-    """Delete a backend and its associated models."""
-    # Delete associated models first
-    models_result = await db.execute(
-        select(Model).where(Model.backend_id == backend_id)
+    """Delete a backend and its associated data."""
+    # Bulk-delete child rows with NOT NULL FK
+    await db.execute(
+        delete(BackendTelemetry).where(BackendTelemetry.backend_id == backend_id)
     )
-    for model in models_result.scalars().all():
-        await db.delete(model)
+    await db.execute(
+        delete(Model).where(Model.backend_id == backend_id)
+    )
+    await db.execute(
+        delete(SchedulerDecision).where(SchedulerDecision.selected_backend_id == backend_id)
+    )
+
+    # Null out nullable FK references (preserve request/usage history)
+    await db.execute(
+        update(Request).where(Request.backend_id == backend_id).values(backend_id=None)
+    )
+    await db.execute(
+        update(UsageLedger).where(UsageLedger.backend_id == backend_id).values(backend_id=None)
+    )
 
     # Delete the backend
     result = await db.execute(select(Backend).where(Backend.id == backend_id))

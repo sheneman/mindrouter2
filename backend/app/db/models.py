@@ -333,8 +333,8 @@ class Backend(Base, TimestampMixin):
 
     # Relationships
     node: Mapped[Optional["Node"]] = relationship("Node", back_populates="backends")
-    models: Mapped[List["Model"]] = relationship("Model", back_populates="backend")
-    telemetry: Mapped[List["BackendTelemetry"]] = relationship("BackendTelemetry", back_populates="backend")
+    models: Mapped[List["Model"]] = relationship("Model", back_populates="backend", cascade="all, delete-orphan")
+    telemetry: Mapped[List["BackendTelemetry"]] = relationship("BackendTelemetry", back_populates="backend", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_backends_status_engine", "status", "engine"),
