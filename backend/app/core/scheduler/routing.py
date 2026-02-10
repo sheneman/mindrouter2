@@ -15,7 +15,7 @@
 """Backend routing - ties together queue, fair-share, and scoring."""
 
 import asyncio
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from backend.app.core.scheduler.queue import Job, RequestQueue
 from backend.app.core.scheduler.fairshare import FairShareManager
@@ -133,6 +133,8 @@ class BackendRouter:
         backends: List[Backend],
         backend_models: Dict[int, List[Model]],
         gpu_utilizations: Dict[int, Optional[float]] = None,
+        exclude_backend_ids: Optional[Set[int]] = None,
+        latency_emas: Optional[Dict[int, float]] = None,
     ) -> RoutingDecision:
         """
         Route a job to the best available backend.
@@ -142,10 +144,16 @@ class BackendRouter:
             backends: Available backends
             backend_models: Models per backend
             gpu_utilizations: GPU utilization per backend
+            exclude_backend_ids: Backend IDs to exclude (already tried in retry loop)
+            latency_emas: Per-backend latency EMA for scoring
 
         Returns:
             RoutingDecision with selected backend or failure reason
         """
+        # Filter out excluded backends (retry failover)
+        if exclude_backend_ids:
+            backends = [b for b in backends if b.id not in exclude_backend_ids]
+
         async with self._lock:
             # Get current queue depths
             queue_depths = dict(self._backend_queue_depths)
@@ -157,6 +165,7 @@ class BackendRouter:
             backend_models=backend_models,
             gpu_utilizations=gpu_utilizations,
             queue_depths=queue_depths,
+            latency_emas=latency_emas,
         )
 
         if not scores:

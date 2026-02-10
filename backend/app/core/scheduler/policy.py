@@ -14,7 +14,7 @@
 
 """Scheduler policy - main entry point for scheduling decisions."""
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 import tiktoken
 
 from backend.app.core.scheduler.routing import BackendRouter, RoutingDecision
@@ -202,6 +202,8 @@ class SchedulerPolicy:
         backends: List[Backend],
         backend_models: Dict[int, List[Model]],
         gpu_utilizations: Optional[Dict[int, Optional[float]]] = None,
+        exclude_backend_ids: Optional[Set[int]] = None,
+        latency_emas: Optional[Dict[int, float]] = None,
     ) -> RoutingDecision:
         """
         Route a job to the best available backend.
@@ -211,6 +213,8 @@ class SchedulerPolicy:
             backends: Available backends
             backend_models: Models per backend
             gpu_utilizations: Optional GPU utilization data
+            exclude_backend_ids: Backend IDs to exclude (retry failover)
+            latency_emas: Per-backend latency EMA for scoring
 
         Returns:
             RoutingDecision
@@ -220,6 +224,8 @@ class SchedulerPolicy:
             backends=backends,
             backend_models=backend_models,
             gpu_utilizations=gpu_utilizations or {},
+            exclude_backend_ids=exclude_backend_ids,
+            latency_emas=latency_emas,
         )
 
     async def on_job_started(self, job: Job, backend_id: int) -> None:

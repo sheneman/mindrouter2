@@ -35,6 +35,7 @@ class BackendScore:
     utilization_score: float = 0.0
     queue_score: float = 0.0
     throughput_score: float = 0.0
+    latency_score: float = 0.0
     priority_score: float = 0.0
 
     # Constraint status
@@ -83,6 +84,7 @@ class BackendScorer:
         self._weight_low_utilization = self._settings.scheduler_score_low_utilization
         self._weight_short_queue = self._settings.scheduler_score_short_queue
         self._weight_high_throughput = self._settings.scheduler_score_high_throughput
+        self._weight_latency = self._settings.scheduler_score_latency
 
     def check_hard_constraints(
         self,
@@ -165,6 +167,7 @@ class BackendScorer:
         backend_models: List[Model],
         gpu_utilization: Optional[float] = None,
         current_queue_depth: int = 0,
+        latency_ema_ms: Optional[float] = None,
     ) -> BackendScore:
         """
         Compute soft score for a backend.
@@ -175,6 +178,7 @@ class BackendScorer:
             backend_models: Models available on this backend
             gpu_utilization: Current GPU utilization (0-100, or None if unknown)
             current_queue_depth: Current queue depth at this backend
+            latency_ema_ms: Real-world latency EMA in ms (lower = better)
 
         Returns:
             BackendScore with component breakdown
@@ -212,6 +216,14 @@ class BackendScorer:
         # Throughput score from backend configuration
         score.throughput_score = self._weight_high_throughput * backend.throughput_score
 
+        # Latency score (lower latency = higher bonus)
+        if latency_ema_ms is not None and latency_ema_ms > 0:
+            latency_factor = 1.0 / (1.0 + latency_ema_ms / 5000.0)
+            score.latency_score = self._weight_latency * latency_factor
+        else:
+            # Unknown latency = neutral (half bonus)
+            score.latency_score = self._weight_latency * 0.5
+
         # Priority score from backend configuration
         score.priority_score = backend.priority * 10  # Scale priority
 
@@ -221,6 +233,7 @@ class BackendScorer:
             + score.utilization_score
             + score.queue_score
             + score.throughput_score
+            + score.latency_score
             + score.priority_score
         )
 
@@ -233,6 +246,7 @@ class BackendScorer:
         backend_models: Dict[int, List[Model]],
         gpu_utilizations: Dict[int, Optional[float]] = None,
         queue_depths: Dict[int, int] = None,
+        latency_emas: Optional[Dict[int, float]] = None,
     ) -> List[BackendScore]:
         """
         Rank backends for a job, filtering by hard constraints.
@@ -243,12 +257,14 @@ class BackendScorer:
             backend_models: Dict mapping backend_id to list of models
             gpu_utilizations: Dict mapping backend_id to GPU utilization
             queue_depths: Dict mapping backend_id to queue depth
+            latency_emas: Dict mapping backend_id to latency EMA (ms)
 
         Returns:
             List of BackendScore, sorted by total_score descending (best first)
         """
         gpu_utilizations = gpu_utilizations or {}
         queue_depths = queue_depths or {}
+        latency_emas = latency_emas or {}
 
         eligible_scores = []
 
@@ -287,6 +303,7 @@ class BackendScorer:
                 backend_models=models,
                 gpu_utilization=gpu_utilizations.get(backend.id),
                 current_queue_depth=queue_depth,
+                latency_ema_ms=latency_emas.get(backend.id),
             )
 
             # Record passed constraints

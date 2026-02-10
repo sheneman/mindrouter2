@@ -96,17 +96,28 @@ class Settings(BaseSettings):
     # Scheduler Scoring
     scheduler_score_model_loaded: int = 100
     scheduler_score_low_utilization: int = 50
+    scheduler_score_latency: int = 40
     scheduler_score_short_queue: int = 30
     scheduler_score_high_throughput: int = 20
+
+    # Latency Tracking
+    latency_ema_alpha: float = 0.3
+    latency_ema_persist_interval: int = 30
 
     # Backend Registry
     backend_poll_interval: int = 30
     backend_health_timeout: int = 5
     backend_unhealthy_threshold: int = 3
+    backend_circuit_breaker_threshold: int = 3
+    backend_circuit_breaker_recovery_seconds: int = 30
+    backend_adaptive_poll_fast_interval: int = 10
+    backend_adaptive_poll_fast_duration: int = 120
 
     # Request Handling
     max_request_size: int = 52428800  # 50MB
     backend_request_timeout: int = 300
+    backend_request_timeout_per_attempt: int = 60
+    backend_retry_max_attempts: int = 3
     backend_retry_attempts: int = 2
     backend_retry_backoff: float = 1.0
     structured_output_retry_on_invalid: bool = True

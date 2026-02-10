@@ -18,7 +18,7 @@ import asyncio
 import json
 import time
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Dict, Optional
+from typing import Any, AsyncIterator, Dict, Optional, Set, Tuple
 
 import httpx
 from fastapi import HTTPException, Request, status
@@ -66,13 +66,19 @@ class InferenceService:
         self._settings = get_settings()
         self._scheduler = get_scheduler()
         self._registry = get_registry()
+        self._latency_tracker = self._registry.latency_tracker
         self._http_client: Optional[httpx.AsyncClient] = None
 
     async def _get_http_client(self) -> httpx.AsyncClient:
-        """Get or create HTTP client."""
+        """Get or create HTTP client with per-attempt timeout."""
         if self._http_client is None or self._http_client.is_closed:
             self._http_client = httpx.AsyncClient(
-                timeout=self._settings.backend_request_timeout,
+                timeout=httpx.Timeout(
+                    connect=10.0,
+                    read=float(self._settings.backend_request_timeout_per_attempt),
+                    write=10.0,
+                    pool=10.0,
+                ),
             )
         return self._http_client
 
@@ -109,12 +115,11 @@ class InferenceService:
         )
         job.request_id = db_request.request_uuid
 
-        # Route to backend
-        backend, models = await self._route_request(job, user)
-
         try:
-            # Proxy request
-            response = await self._proxy_chat_request(request, backend)
+            # Route and proxy with retry
+            response, backend = await self._proxy_with_retry(
+                request, job, user, proxy_fn="_proxy_chat_request"
+            )
 
             # Update records
             await self._complete_request(
@@ -124,7 +129,7 @@ class InferenceService:
             return response
 
         except Exception as e:
-            await self._fail_request(db_request, backend.id if backend else None, str(e), job)
+            await self._fail_request(db_request, None, str(e), job)
             raise
 
     async def stream_chat_completion(
@@ -150,16 +155,15 @@ class InferenceService:
         )
         job.request_id = db_request.request_uuid
 
-        backend, models = await self._route_request(job, user)
-
         try:
             full_content = ""
             chunk_count = 0
-            first_token_time = None
+            routed_backend = None
 
-            async for chunk in self._proxy_stream_request(request, backend):
-                if first_token_time is None:
-                    first_token_time = time.time()
+            async for chunk, backend in self._proxy_stream_with_retry(
+                request, job, user, proxy_fn="_proxy_stream_request"
+            ):
+                routed_backend = backend
 
                 # Format as SSE
                 yield f"data: {chunk.model_dump_json()}\n\n".encode()
@@ -175,12 +179,14 @@ class InferenceService:
             yield b"data: [DONE]\n\n"
 
             # Update records
-            await self._complete_streaming_request(
-                db_request, backend.id, full_content, chunk_count, job
-            )
+            if routed_backend:
+                await self._complete_streaming_request(
+                    db_request, routed_backend.id, full_content, chunk_count, job
+                )
 
         except Exception as e:
-            await self._fail_request(db_request, backend.id if backend else None, str(e), job)
+            backend_id = routed_backend.id if routed_backend else None
+            await self._fail_request(db_request, backend_id, str(e), job)
             raise
 
     async def embedding(
@@ -203,10 +209,12 @@ class InferenceService:
         )
         job.request_id = db_request.request_uuid
 
-        backend, models = await self._route_request(job, user, Modality.EMBEDDING)
-
         try:
-            response = await self._proxy_embedding_request(request, backend)
+            response, backend = await self._proxy_with_retry(
+                request, job, user,
+                modality=Modality.EMBEDDING,
+                proxy_fn="_proxy_embedding_request",
+            )
 
             await self._complete_request(
                 db_request, backend.id, response, job,
@@ -216,7 +224,7 @@ class InferenceService:
             return response
 
         except Exception as e:
-            await self._fail_request(db_request, backend.id if backend else None, str(e), job)
+            await self._fail_request(db_request, None, str(e), job)
             raise
 
     async def ollama_chat(
@@ -238,10 +246,10 @@ class InferenceService:
         )
         job.request_id = db_request.request_uuid
 
-        backend, models = await self._route_request(job, user)
-
         try:
-            response = await self._proxy_ollama_chat(request, backend)
+            response, backend = await self._proxy_with_retry(
+                request, job, user, proxy_fn="_proxy_ollama_chat"
+            )
 
             await self._complete_request(
                 db_request, backend.id, response, job
@@ -250,7 +258,7 @@ class InferenceService:
             return response
 
         except Exception as e:
-            await self._fail_request(db_request, backend.id if backend else None, str(e), job)
+            await self._fail_request(db_request, None, str(e), job)
             raise
 
     async def stream_ollama_chat(
@@ -272,25 +280,29 @@ class InferenceService:
         )
         job.request_id = db_request.request_uuid
 
-        backend, models = await self._route_request(job, user)
-
         try:
             full_content = ""
             chunk_count = 0
+            routed_backend = None
 
-            async for chunk_data in self._proxy_ollama_stream(request, backend):
+            async for chunk_data, backend in self._proxy_stream_with_retry(
+                request, job, user, proxy_fn="_proxy_ollama_stream"
+            ):
+                routed_backend = backend
                 yield (json.dumps(chunk_data) + "\n").encode()
                 chunk_count += 1
 
                 if "message" in chunk_data:
                     full_content += chunk_data["message"].get("content", "")
 
-            await self._complete_streaming_request(
-                db_request, backend.id, full_content, chunk_count, job
-            )
+            if routed_backend:
+                await self._complete_streaming_request(
+                    db_request, routed_backend.id, full_content, chunk_count, job
+                )
 
         except Exception as e:
-            await self._fail_request(db_request, backend.id if backend else None, str(e), job)
+            backend_id = routed_backend.id if routed_backend else None
+            await self._fail_request(db_request, backend_id, str(e), job)
             raise
 
     async def stream_ollama_generate(
@@ -401,6 +413,7 @@ class InferenceService:
         job: Job,
         user: User,
         modality: Optional[Modality] = None,
+        exclude_backend_ids: Optional[Set[int]] = None,
     ):
         """Route request to a backend, waiting for capacity if needed."""
         # Get backends that support the model
@@ -418,6 +431,14 @@ class InferenceService:
                 detail="No healthy backends available",
             )
 
+        # Filter out circuit-broken backends
+        available = []
+        for b in backends:
+            if await self._registry.is_backend_available(b.id):
+                available.append(b)
+        if available:
+            backends = available
+
         # Get models for each backend
         backend_models = {}
         for backend in backends:
@@ -425,11 +446,13 @@ class InferenceService:
                 backend.id
             )
 
-        # Get GPU utilizations
+        # Get GPU utilizations and latency EMAs
         gpu_utilizations = await self._registry.get_gpu_utilizations()
+        latency_emas = await self._latency_tracker.get_all_latencies()
 
-        # Submit to scheduler
-        await self._scheduler.submit_job(job, user.role.value)
+        # Submit to scheduler (only on first attempt — not on retries)
+        if not exclude_backend_ids:
+            await self._scheduler.submit_job(job, user.role.value)
 
         # Retry loop: wait for capacity instead of immediately 503-ing
         # Use half the backend timeout for routing, leaving the rest for inference
@@ -440,7 +463,9 @@ class InferenceService:
         while True:
             try:
                 decision = await self._scheduler.route_job(
-                    job, backends, backend_models, gpu_utilizations
+                    job, backends, backend_models, gpu_utilizations,
+                    exclude_backend_ids=exclude_backend_ids,
+                    latency_emas=latency_emas,
                 )
             except Exception:
                 await self._scheduler.cancel_job(job.request_id)
@@ -494,12 +519,195 @@ class InferenceService:
                     detail="No healthy backends available",
                 )
 
+            # Filter out circuit-broken backends
+            available = []
+            for b in backends:
+                if await self._registry.is_backend_available(b.id):
+                    available.append(b)
+            if available:
+                backends = available
+
             backend_models = {}
             for backend in backends:
                 backend_models[backend.id] = await self._registry.get_backend_models(
                     backend.id
                 )
             gpu_utilizations = await self._registry.get_gpu_utilizations()
+            latency_emas = await self._latency_tracker.get_all_latencies()
+
+    # ------------------------------------------------------------------
+    # Retry-with-failover wrappers
+    # ------------------------------------------------------------------
+
+    async def _proxy_with_retry(
+        self,
+        request,
+        job: Job,
+        user: User,
+        modality: Optional[Modality] = None,
+        proxy_fn: str = "_proxy_chat_request",
+    ) -> Tuple[Any, Backend]:
+        """Execute a proxy call with retry on different backends.
+
+        On timeout, 5xx, or connection error the request is retried on a
+        different backend (up to ``backend_retry_max_attempts`` total).
+        4xx errors are NOT retried (client errors).
+
+        Returns:
+            (response, backend) on success.
+        """
+        max_attempts = self._settings.backend_retry_max_attempts
+        tried_backends: Set[int] = set()
+        last_error: Optional[Exception] = None
+
+        for attempt in range(max_attempts):
+            backend, _models = await self._route_request(
+                job, user, modality, exclude_backend_ids=tried_backends or None,
+            )
+            tried_backends.add(backend.id)
+            start_time = time.monotonic()
+
+            try:
+                response = await asyncio.wait_for(
+                    getattr(self, proxy_fn)(request, backend),
+                    timeout=float(self._settings.backend_request_timeout_per_attempt),
+                )
+                # Success — record latency
+                elapsed_ms = (time.monotonic() - start_time) * 1000
+                await self._registry.report_live_success(backend.id)
+                await self._latency_tracker.record_latency(backend.id, elapsed_ms)
+                return response, backend
+
+            except (asyncio.TimeoutError, httpx.TimeoutException) as e:
+                logger.warning(
+                    "backend_timeout",
+                    backend_id=backend.id,
+                    attempt=attempt + 1,
+                    max_attempts=max_attempts,
+                    elapsed_ms=(time.monotonic() - start_time) * 1000,
+                )
+                await self._scheduler.on_job_failed(job, backend.id)
+                await self._registry.report_live_failure(backend.id)
+                last_error = e
+
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code >= 500:
+                    logger.warning(
+                        "backend_5xx",
+                        backend_id=backend.id,
+                        status=e.response.status_code,
+                        attempt=attempt + 1,
+                    )
+                    await self._scheduler.on_job_failed(job, backend.id)
+                    await self._registry.report_live_failure(backend.id)
+                    last_error = e
+                else:
+                    # 4xx = client error — don't retry
+                    raise
+
+            except (httpx.ConnectError, httpx.RemoteProtocolError, ConnectionError) as e:
+                logger.warning(
+                    "backend_connection_error",
+                    backend_id=backend.id,
+                    attempt=attempt + 1,
+                    error=str(e),
+                )
+                await self._scheduler.on_job_failed(job, backend.id)
+                await self._registry.report_live_failure(backend.id)
+                last_error = e
+
+        # All attempts exhausted
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"All {max_attempts} backend attempts failed. Last error: {last_error}",
+        )
+
+    async def _proxy_stream_with_retry(
+        self,
+        request,
+        job: Job,
+        user: User,
+        proxy_fn: str = "_proxy_stream_request",
+        modality: Optional[Modality] = None,
+    ) -> AsyncIterator[Tuple[Any, Backend]]:
+        """Stream with retry support.
+
+        Retries are only possible BEFORE the first chunk is yielded.
+        Once streaming begins, failures are terminal (the client already
+        has partial data).
+
+        Yields:
+            (chunk, backend) tuples.
+        """
+        max_attempts = self._settings.backend_retry_max_attempts
+        tried_backends: Set[int] = set()
+        last_error: Optional[Exception] = None
+
+        for attempt in range(max_attempts):
+            backend, _models = await self._route_request(
+                job, user, modality, exclude_backend_ids=tried_backends or None,
+            )
+            tried_backends.add(backend.id)
+            start_time = time.monotonic()
+            first_chunk_received = False
+
+            try:
+                async for chunk in getattr(self, proxy_fn)(request, backend):
+                    if not first_chunk_received:
+                        first_chunk_received = True
+                        ttft_ms = (time.monotonic() - start_time) * 1000
+                        await self._registry.report_live_success(backend.id)
+                        await self._latency_tracker.record_ttft(backend.id, ttft_ms)
+
+                    yield chunk, backend
+
+                # Stream completed successfully — record total latency
+                total_ms = (time.monotonic() - start_time) * 1000
+                await self._latency_tracker.record_latency(backend.id, total_ms)
+                return
+
+            except (
+                asyncio.TimeoutError,
+                httpx.TimeoutException,
+                httpx.ConnectError,
+                httpx.RemoteProtocolError,
+                ConnectionError,
+            ) as e:
+                if first_chunk_received:
+                    # Can't retry after streaming started
+                    raise
+
+                logger.warning(
+                    "stream_backend_failure",
+                    backend_id=backend.id,
+                    attempt=attempt + 1,
+                    error=str(e),
+                )
+                await self._scheduler.on_job_failed(job, backend.id)
+                await self._registry.report_live_failure(backend.id)
+                last_error = e
+
+            except httpx.HTTPStatusError as e:
+                if first_chunk_received or e.response.status_code < 500:
+                    raise
+                logger.warning(
+                    "stream_backend_5xx",
+                    backend_id=backend.id,
+                    status=e.response.status_code,
+                    attempt=attempt + 1,
+                )
+                await self._scheduler.on_job_failed(job, backend.id)
+                await self._registry.report_live_failure(backend.id)
+                last_error = e
+
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"All {max_attempts} streaming attempts failed. Last error: {last_error}",
+        )
+
+    # ------------------------------------------------------------------
+    # Proxy methods (unchanged — called by retry wrappers above)
+    # ------------------------------------------------------------------
 
     async def _proxy_chat_request(
         self,

@@ -99,3 +99,26 @@ class BackendHealth:
     latency_ms: float = 0.0
     error_message: Optional[str] = None
     checked_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+@dataclass
+class CircuitBreakerState:
+    """Per-backend circuit breaker state for reactive health management."""
+
+    live_failure_count: int = 0
+    circuit_open_until: Optional[datetime] = None
+    last_failure_time: Optional[datetime] = None
+
+    @property
+    def is_open(self) -> bool:
+        """Circuit is open (rejecting requests) if open_until is in the future."""
+        if self.circuit_open_until is None:
+            return False
+        return datetime.now(timezone.utc) < self.circuit_open_until
+
+    @property
+    def is_half_open(self) -> bool:
+        """Circuit is half-open (allowing a probe) if open_until has passed."""
+        if self.circuit_open_until is None:
+            return False
+        return datetime.now(timezone.utc) >= self.circuit_open_until

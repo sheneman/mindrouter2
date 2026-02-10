@@ -437,6 +437,7 @@ class TestBackendScorer:
             settings = MagicMock()
             settings.scheduler_score_model_loaded = 100
             settings.scheduler_score_low_utilization = 50
+            settings.scheduler_score_latency = 40
             settings.scheduler_score_short_queue = 30
             settings.scheduler_score_high_throughput = 20
             mock_settings.return_value = settings

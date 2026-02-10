@@ -285,6 +285,14 @@ class Backend(Base, TimestampMixin):
     priority: Mapped[int] = mapped_column(Integer, default=0, nullable=False)  # Higher = preferred
     throughput_score: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
 
+    # Latency EMA (persisted for restart resilience)
+    latency_ema_ms: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    ttft_ema_ms: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+
+    # Circuit breaker state
+    live_failure_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    circuit_open_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # Relationships
     models: Mapped[List["Model"]] = relationship("Model", back_populates="backend")
     telemetry: Mapped[List["BackendTelemetry"]] = relationship("BackendTelemetry", back_populates="backend")

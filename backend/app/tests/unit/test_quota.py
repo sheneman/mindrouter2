@@ -29,6 +29,7 @@ class TestQuotaModel:
         quota = Quota(
             user_id=1,
             token_budget=100000,
+            tokens_used=0,
         )
 
         assert quota.user_id == 1
@@ -347,7 +348,7 @@ class TestTokenEstimation:
             encoder = tiktoken.get_encoding("cl100k_base")
             text = "Hello, this is a test."
             tokens = encoder.encode(text)
-            assert len(tokens) == 6  # Actual token count
+            assert len(tokens) == 7  # Actual token count
         except ImportError:
             pytest.skip("tiktoken not installed")
 

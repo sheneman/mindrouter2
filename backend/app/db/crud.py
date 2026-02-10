@@ -413,6 +413,42 @@ async def update_backend_concurrency(
     return backend
 
 
+async def update_backend_latency_ema(
+    db: AsyncSession,
+    backend_id: int,
+    latency_ema_ms: Optional[float],
+    ttft_ema_ms: Optional[float],
+    throughput_score: float,
+) -> None:
+    """Persist latency EMA and derived throughput_score to the backend row."""
+    await db.execute(
+        update(Backend)
+        .where(Backend.id == backend_id)
+        .values(
+            latency_ema_ms=latency_ema_ms,
+            ttft_ema_ms=ttft_ema_ms,
+            throughput_score=throughput_score,
+        )
+    )
+
+
+async def update_backend_circuit_breaker(
+    db: AsyncSession,
+    backend_id: int,
+    live_failure_count: int,
+    circuit_open_until: Optional[datetime] = None,
+) -> None:
+    """Persist circuit breaker state."""
+    await db.execute(
+        update(Backend)
+        .where(Backend.id == backend_id)
+        .values(
+            live_failure_count=live_failure_count,
+            circuit_open_until=circuit_open_until,
+        )
+    )
+
+
 # Model CRUD
 async def get_models_for_backend(db: AsyncSession, backend_id: int) -> List[Model]:
     """Get all models for a backend."""

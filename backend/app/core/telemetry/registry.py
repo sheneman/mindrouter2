@@ -15,16 +15,18 @@
 """Backend registry - manages backend discovery, health, and telemetry."""
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.telemetry.adapters.ollama import OllamaAdapter
 from backend.app.core.telemetry.adapters.vllm import VLLMAdapter
+from backend.app.core.telemetry.latency_tracker import LatencyTracker
 from backend.app.core.telemetry.models import (
     BackendCapabilities,
     BackendHealth,
+    CircuitBreakerState,
     TelemetrySnapshot,
 )
 from backend.app.db import crud
@@ -54,14 +56,45 @@ class BackendRegistry:
         self._telemetry: Dict[int, TelemetrySnapshot] = {}
         self._lock = asyncio.Lock()
         self._poll_task: Optional[asyncio.Task] = None
+        self._persist_task: Optional[asyncio.Task] = None
+
+        # Circuit breaker state per backend
+        self._circuit_breakers: Dict[int, CircuitBreakerState] = {}
+
+        # Fast-poll set: backend_id -> fast_poll_until timestamp
+        self._fast_poll_backends: Dict[int, datetime] = {}
+
+        # Latency tracker
+        self._latency_tracker = LatencyTracker(
+            alpha=self._settings.latency_ema_alpha
+        )
+
+    @property
+    def latency_tracker(self) -> LatencyTracker:
+        """Access the latency tracker."""
+        return self._latency_tracker
 
     async def start(self) -> None:
         """Start the registry and begin polling."""
         # Load existing backends from database
         await self._load_backends_from_db()
 
-        # Start polling task
+        # Load persisted latency EMAs
+        async with get_async_db_context() as db:
+            all_backends = await crud.get_all_backends(db=db)
+        await self._latency_tracker.load_from_db(all_backends)
+
+        # Load persisted circuit breaker state
+        for b in all_backends:
+            cb = CircuitBreakerState(
+                live_failure_count=getattr(b, "live_failure_count", 0) or 0,
+                circuit_open_until=getattr(b, "circuit_open_until", None),
+            )
+            self._circuit_breakers[b.id] = cb
+
+        # Start background tasks
         self._poll_task = asyncio.create_task(self._poll_loop())
+        self._persist_task = asyncio.create_task(self._persist_latency_loop())
         logger.info("Backend registry started")
 
     async def stop(self) -> None:
@@ -72,6 +105,19 @@ class BackendRegistry:
                 await self._poll_task
             except asyncio.CancelledError:
                 pass
+
+        if self._persist_task:
+            self._persist_task.cancel()
+            try:
+                await self._persist_task
+            except asyncio.CancelledError:
+                pass
+
+        # Final persist of latency data before shutdown
+        try:
+            await self._persist_latency_data()
+        except Exception as e:
+            logger.warning("shutdown_persist_error", error=str(e))
 
         # Close all adapters
         for adapter in self._adapters.values():
@@ -254,6 +300,136 @@ class BackendRegistry:
         async with self._lock:
             return self._capabilities.get(backend_id)
 
+    # ------------------------------------------------------------------
+    # Circuit breaker & reactive health
+    # ------------------------------------------------------------------
+
+    async def report_live_failure(self, backend_id: int) -> None:
+        """Called when a live request to a backend fails.
+
+        Increments failure count. If threshold reached, opens circuit and
+        marks backend UNHEALTHY immediately. Activates fast-polling.
+        """
+        cb = self._circuit_breakers.setdefault(backend_id, CircuitBreakerState())
+        cb.live_failure_count += 1
+        cb.last_failure_time = datetime.now(timezone.utc)
+
+        threshold = self._settings.backend_circuit_breaker_threshold
+        if cb.live_failure_count >= threshold and not cb.is_open:
+            recovery = self._settings.backend_circuit_breaker_recovery_seconds
+            cb.circuit_open_until = datetime.now(timezone.utc) + timedelta(seconds=recovery)
+
+            # Mark UNHEALTHY in DB immediately
+            try:
+                async with get_async_db_context() as db:
+                    await crud.update_backend_status(
+                        db=db,
+                        backend_id=backend_id,
+                        status=BackendStatus.UNHEALTHY,
+                    )
+                    await crud.update_backend_circuit_breaker(
+                        db=db,
+                        backend_id=backend_id,
+                        live_failure_count=cb.live_failure_count,
+                        circuit_open_until=cb.circuit_open_until,
+                    )
+            except Exception as e:
+                logger.warning("circuit_breaker_db_error", backend_id=backend_id, error=str(e))
+
+            # Activate fast polling
+            fast_duration = self._settings.backend_adaptive_poll_fast_duration
+            self._fast_poll_backends[backend_id] = (
+                datetime.now(timezone.utc) + timedelta(seconds=fast_duration)
+            )
+
+            logger.warning(
+                "circuit_breaker_opened",
+                backend_id=backend_id,
+                failures=cb.live_failure_count,
+                recovery_seconds=recovery,
+            )
+
+    async def report_live_success(self, backend_id: int) -> None:
+        """Called when a live request to a backend succeeds.
+
+        Resets failure count. If circuit was half-open, closes it and
+        marks backend HEALTHY.
+        """
+        cb = self._circuit_breakers.get(backend_id)
+        if cb is None:
+            return
+
+        was_half_open = cb.is_half_open
+        cb.live_failure_count = 0
+        cb.circuit_open_until = None
+        cb.last_failure_time = None
+
+        if was_half_open:
+            # Circuit recovered — mark healthy
+            try:
+                async with get_async_db_context() as db:
+                    await crud.update_backend_status(
+                        db=db,
+                        backend_id=backend_id,
+                        status=BackendStatus.HEALTHY,
+                    )
+                    await crud.update_backend_circuit_breaker(
+                        db=db,
+                        backend_id=backend_id,
+                        live_failure_count=0,
+                        circuit_open_until=None,
+                    )
+            except Exception as e:
+                logger.warning("circuit_close_db_error", backend_id=backend_id, error=str(e))
+
+            # Remove from fast-poll set
+            self._fast_poll_backends.pop(backend_id, None)
+
+            logger.info("circuit_breaker_closed", backend_id=backend_id)
+
+    async def is_backend_available(self, backend_id: int) -> bool:
+        """Check if backend is available (circuit not open).
+
+        Half-open circuits ARE available (they allow a single probe request).
+        """
+        cb = self._circuit_breakers.get(backend_id)
+        if cb is None:
+            return True
+        return not cb.is_open
+
+    # ------------------------------------------------------------------
+    # Latency persistence
+    # ------------------------------------------------------------------
+
+    async def _persist_latency_loop(self) -> None:
+        """Periodically persist latency EMA values to DB."""
+        while True:
+            try:
+                await asyncio.sleep(self._settings.latency_ema_persist_interval)
+                await self._persist_latency_data()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error("persist_latency_error", error=str(e))
+
+    async def _persist_latency_data(self) -> None:
+        """Write current latency EMA and throughput scores to DB."""
+        all_latencies = await self._latency_tracker.get_all_latencies()
+        if not all_latencies:
+            return
+
+        async with get_async_db_context() as db:
+            for backend_id, latency_ema in all_latencies.items():
+                ttft_ema = await self._latency_tracker.get_ttft_ema(backend_id)
+                throughput = self._latency_tracker.compute_throughput_score(backend_id)
+                await crud.update_backend_latency_ema(
+                    db=db,
+                    backend_id=backend_id,
+                    latency_ema_ms=latency_ema,
+                    ttft_ema_ms=ttft_ema,
+                    throughput_score=throughput,
+                )
+
     def _create_adapter(self, backend: Backend) -> OllamaAdapter | VLLMAdapter:
         """Create the appropriate adapter for a backend."""
         timeout = self._settings.backend_health_timeout
@@ -275,11 +451,42 @@ class BackendRegistry:
         logger.info("loaded_backends", count=len(backends))
 
     async def _poll_loop(self) -> None:
-        """Background polling loop."""
+        """Background polling loop with adaptive intervals for troubled backends."""
+        last_full_poll = 0.0
         while True:
             try:
-                await asyncio.sleep(self._settings.backend_poll_interval)
-                await self._poll_all_backends()
+                now = datetime.now(timezone.utc)
+
+                # Clean up expired fast-poll entries
+                self._fast_poll_backends = {
+                    bid: until
+                    for bid, until in self._fast_poll_backends.items()
+                    if now < until
+                }
+
+                # Fast-poll troubled backends at the fast interval
+                if self._fast_poll_backends:
+                    fast_tasks = [
+                        self._check_backend_health(bid)
+                        for bid in self._fast_poll_backends
+                    ]
+                    await asyncio.gather(*fast_tasks, return_exceptions=True)
+
+                # Determine sleep interval
+                if self._fast_poll_backends:
+                    interval = self._settings.backend_adaptive_poll_fast_interval
+                else:
+                    interval = self._settings.backend_poll_interval
+
+                await asyncio.sleep(interval)
+
+                # Full poll on normal interval
+                import time as _time
+                elapsed = _time.monotonic() - last_full_poll
+                if elapsed >= self._settings.backend_poll_interval:
+                    await self._poll_all_backends()
+                    last_full_poll = _time.monotonic()
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -314,6 +521,21 @@ class BackendRegistry:
                         backend_id=backend_id,
                         status=BackendStatus.HEALTHY,
                     )
+
+                    # If circuit was open/half-open, close it on successful health check
+                    cb = self._circuit_breakers.get(backend_id)
+                    if cb and (cb.is_open or cb.is_half_open):
+                        cb.live_failure_count = 0
+                        cb.circuit_open_until = None
+                        cb.last_failure_time = None
+                        await crud.update_backend_circuit_breaker(
+                            db=db,
+                            backend_id=backend_id,
+                            live_failure_count=0,
+                            circuit_open_until=None,
+                        )
+                        self._fast_poll_backends.pop(backend_id, None)
+                        logger.info("circuit_breaker_closed_by_health_check", backend_id=backend_id)
                 else:
                     # Check consecutive failures
                     backend = await crud.get_backend_by_id(db, backend_id)
