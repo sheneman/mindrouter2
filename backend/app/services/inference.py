@@ -414,8 +414,15 @@ class InferenceService:
         user: User,
         modality: Optional[Modality] = None,
         exclude_backend_ids: Optional[Set[int]] = None,
+        max_wait: Optional[float] = None,
     ):
-        """Route request to a backend, waiting for capacity if needed."""
+        """Route request to a backend, waiting for capacity if needed.
+
+        Args:
+            max_wait: Maximum seconds to wait for capacity.  ``None`` (default)
+                uses ``backend_request_timeout / 2``.  Pass ``0`` to fail
+                immediately if no backend is available right now.
+        """
         # Get backends that support the model
         backends = await self._registry.get_backends_with_model(
             job.model, modality
@@ -456,7 +463,7 @@ class InferenceService:
 
         # Retry loop: wait for capacity instead of immediately 503-ing
         # Use half the backend timeout for routing, leaving the rest for inference
-        route_timeout = self._settings.backend_request_timeout / 2
+        route_timeout = max_wait if max_wait is not None else self._settings.backend_request_timeout / 2
         deadline = time.monotonic() + route_timeout
         last_reason = ""
 
@@ -561,9 +568,13 @@ class InferenceService:
         last_error: Optional[Exception] = None
 
         for attempt in range(max_attempts):
+            # First attempt waits normally for capacity; retries fail fast.
+            retry_wait = None if attempt == 0 else 0
             try:
                 backend, _models = await self._route_request(
-                    job, user, modality, exclude_backend_ids=tried_backends or None,
+                    job, user, modality,
+                    exclude_backend_ids=tried_backends or None,
+                    max_wait=retry_wait,
                 )
             except HTTPException:
                 # No routable backends with exclusions — clear exclusions so we
@@ -571,9 +582,13 @@ class InferenceService:
                 # with a transient 5xx).
                 if tried_backends:
                     tried_backends.clear()
-                    backend, _models = await self._route_request(
-                        job, user, modality,
-                    )
+                    try:
+                        backend, _models = await self._route_request(
+                            job, user, modality, max_wait=retry_wait,
+                        )
+                    except HTTPException:
+                        # Still no backends — all are circuit-broken.  Fail fast.
+                        break
                 else:
                     raise
             tried_backends.add(backend.id)
@@ -656,16 +671,23 @@ class InferenceService:
         last_error: Optional[Exception] = None
 
         for attempt in range(max_attempts):
+            # First attempt waits normally for capacity; retries fail fast.
+            retry_wait = None if attempt == 0 else 0
             try:
                 backend, _models = await self._route_request(
-                    job, user, modality, exclude_backend_ids=tried_backends or None,
+                    job, user, modality,
+                    exclude_backend_ids=tried_backends or None,
+                    max_wait=retry_wait,
                 )
             except HTTPException:
                 if tried_backends:
                     tried_backends.clear()
-                    backend, _models = await self._route_request(
-                        job, user, modality,
-                    )
+                    try:
+                        backend, _models = await self._route_request(
+                            job, user, modality, max_wait=retry_wait,
+                        )
+                    except HTTPException:
+                        break
                 else:
                     raise
             tried_backends.add(backend.id)
