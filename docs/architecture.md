@@ -84,17 +84,32 @@ Implements Weighted Deficit Round Robin (WDRR) for fair resource allocation.
 
 ### 4. Backend Registry
 
-Manages backend discovery, health, and telemetry.
+Manages backend discovery, health, and telemetry. The registry operates on a **Node/Backend separation**: a Node represents a physical GPU server running a sidecar agent, while a Backend is an inference endpoint running on a node.
 
-**Capabilities:**
-- Automatic model discovery
-- Health check polling
-- GPU utilization tracking
-- Model residency tracking
+**Node/Backend Model:**
+- **Node**: Physical server with a sidecar agent, owns GPU devices
+- **Backend**: Inference endpoint (Ollama/vLLM) running on a node, assigned specific GPUs via `gpu_indices`
+- One sidecar poll per node (deduplicated across backends)
+- Per-backend GPU aggregation uses only assigned GPU subset
+
+**Two-Phase Telemetry Collection:**
+1. **Phase A — Per-node sidecar poll**: Calls each node's sidecar once, upserts GPU device records, stores GPU telemetry, updates node hardware info
+2. **Phase B — Per-backend health poll**: Calls each backend's inference API for health/model/request metrics, computes per-backend GPU utilization from cached node data filtered by `gpu_indices`
 
 **Backend Adapters:**
 - `OllamaAdapter` - Polls `/api/tags`, `/api/ps`, `/api/version`
 - `VLLMAdapter` - Polls `/v1/models`, `/health`, `/metrics`
+- `SidecarClient` - Polls node's `/gpu-info` for GPU hardware metrics
+
+### 4a. GPU Sidecar Agent
+
+A lightweight FastAPI service (`sidecar/gpu_agent.py`) that runs on each physical GPU server. Uses NVIDIA Management Library (pynvml) to expose per-GPU metrics.
+
+**Endpoints:**
+- `GET /health` - Liveness check, returns GPU count
+- `GET /gpu-info` - Full GPU metrics (utilization, memory, temperature, power, clocks, processes)
+
+**Deployment:** Runs as a Docker container with `--gpus all` or directly via Python on each GPU node. Exposes port 9101 by default.
 
 ### 5. Backend Scorer
 
@@ -158,12 +173,25 @@ Complete request/response logging for compliance.
                           └─────────────┘
 
 ┌─────────────┐     ┌─────────────┐
+│    Node     │────<│  GPUDevice  │
+└──────┬──────┘     └──────┬──────┘
+       │                   │
+       │     ┌─────────────┤
+       │     │  GPUDevice   │
+       │     │  Telemetry   │
+       │     └─────────────┘
+       │
+┌──────┴──────┐     ┌─────────────┐
 │   Backend   │────<│    Model    │
 └──────┬──────┘     └─────────────┘
        │
        │     ┌─────────────┐
        └────<│  Telemetry  │
              └─────────────┘
+
+Node → Backend: one-to-many (a node can host multiple backends)
+Backend.gpu_indices: JSON list of GPU device indices assigned to this backend
+GPUDevice belongs to Node (not Backend)
 ```
 
 ## Request Flow

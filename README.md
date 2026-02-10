@@ -10,7 +10,9 @@ A production-ready **LLM inference load balancer** that fronts a heterogeneous b
 - **Multi-Modal Support**: Text, embeddings, and vision-language models
 - **Structured Outputs**: JSON schema validation across all backends
 - **Quota Management**: Per-user token budgets with role-based weights
-- **Real-Time Telemetry**: GPU/memory/utilization monitoring per backend
+- **Node/Backend Architecture**: Separate physical GPU nodes from inference endpoints — one sidecar poll per node, GPU-to-backend assignment
+- **GPU Sidecar Agent**: Lightweight per-node agent for real-time GPU metrics (utilization, memory, temperature, power)
+- **Real-Time Telemetry**: GPU/memory/utilization monitoring per node and per backend
 - **Full Audit Logging**: All prompts, responses, and artifacts stored for review
 - **Dual Dashboards**: Public status + authenticated user/admin interfaces
 
@@ -138,19 +140,30 @@ After running the seed script:
 │                              │                                   │
 │  ┌───────────────────────────┴───────────────────────────────┐  │
 │  │                  Backend Registry                          │  │
-│  │  • Capability polling (models, GPU, memory)               │  │
-│  │  • Health monitoring                                       │  │
-│  │  • Model residency tracking                                │  │
+│  │  • Node + Backend separation (1 node → N backends)        │  │
+│  │  • Per-node sidecar polling (deduplicated)                │  │
+│  │  • GPU-to-backend assignment via gpu_indices              │  │
+│  │  • Health monitoring & model residency tracking           │  │
 │  └───────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
                                │
         ┌──────────────────────┼──────────────────────┐
         ▼                      ▼                      ▼
-   ┌─────────┐           ┌─────────┐           ┌─────────┐
-   │ Ollama  │           │  vLLM   │           │ Ollama  │
-   │ Node 1  │           │ Node 1  │           │ Node 2  │
-   └─────────┘           └─────────┘           └─────────┘
+   ┌─────────────┐      ┌─────────────┐      ┌─────────────┐
+   │   Node 1    │      │   Node 2    │      │   Node 3    │
+   │  4x A100    │      │  2x L40S    │      │  2x RTX4090 │
+   │ ┌─────────┐ │      │ ┌─────────┐ │      │ ┌─────────┐ │
+   │ │ Sidecar │ │      │ │ Sidecar │ │      │ │ Sidecar │ │
+   │ │ :9101   │ │      │ │ :9101   │ │      │ │ :9101   │ │
+   │ └─────────┘ │      │ └─────────┘ │      │ └─────────┘ │
+   │ ┌────┬────┐ │      │ ┌─────────┐ │      │ ┌─────────┐ │
+   │ │vLLM│vLLM│ │      │ │  Ollama │ │      │ │  Ollama │ │
+   │ │0,1 │2,3 │ │      │ │  (all)  │ │      │ │  (all)  │ │
+   │ └────┴────┘ │      │ └─────────┘ │      │ └─────────┘ │
+   └─────────────┘      └─────────────┘      └─────────────┘
 ```
+
+**Key concept**: A **Node** represents a physical GPU server running a sidecar agent. A **Backend** is an inference endpoint (Ollama or vLLM instance) running on a node. Multiple backends can share a node, each assigned specific GPUs via `gpu_indices`.
 
 ## Configuration
 
@@ -168,36 +181,50 @@ Key settings:
 | `ARTIFACT_STORAGE_PATH` | Path for uploaded files | `/data/artifacts` |
 | `DEFAULT_TOKEN_BUDGET` | Monthly token allowance | 100000 |
 | `SCHEDULER_FAIRNESS_WINDOW` | Rolling window for usage tracking | 300 (5 min) |
+| `GPU_AGENT_PORT` | Sidecar agent listen port | 9101 |
 
-### Backend Registration
+### Node and Backend Registration
 
-Register backends via admin API or dashboard:
+MindRouter2 separates **nodes** (physical GPU servers) from **backends** (inference endpoints). Register a node first, then attach backends to it.
 
 ```bash
-# Register an Ollama backend
-curl -X POST http://localhost:8000/admin/backends/register \
+# Step 1: Register a GPU node (physical server running the sidecar agent)
+curl -X POST http://localhost:8000/api/admin/nodes/register \
   -H "Authorization: Bearer admin-api-key" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "ollama-gpu-1",
-    "url": "http://ollama-host:11434",
-    "engine": "ollama",
-    "max_concurrent": 4,
-    "gpu_memory_gb": 24
+    "name": "gpu-server-1",
+    "hostname": "gpu1.example.com",
+    "sidecar_url": "http://gpu1.example.com:9101"
   }'
 
-# Register a vLLM backend
-curl -X POST http://localhost:8000/admin/backends/register \
+# Step 2: Register a backend on that node (all GPUs)
+curl -X POST http://localhost:8000/api/admin/backends/register \
   -H "Authorization: Bearer admin-api-key" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "vllm-a100-1",
-    "url": "http://vllm-host:8000",
+    "name": "ollama-gpu1",
+    "url": "http://gpu1.example.com:11434",
+    "engine": "ollama",
+    "max_concurrent": 4,
+    "node_id": 1
+  }'
+
+# Or assign specific GPUs to a backend (multi-backend node)
+curl -X POST http://localhost:8000/api/admin/backends/register \
+  -H "Authorization: Bearer admin-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "vllm-gpu1-01",
+    "url": "http://gpu1.example.com:8000",
     "engine": "vllm",
     "max_concurrent": 16,
-    "gpu_memory_gb": 80
+    "node_id": 1,
+    "gpu_indices": [0, 1]
   }'
 ```
+
+Backends without a `node_id` still work as standalone endpoints (no GPU telemetry).
 
 ## Development
 
@@ -282,10 +309,16 @@ make docker-down  # Stop docker compose stack
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/admin/backends/register` | Register new backend |
+| POST | `/api/admin/nodes/register` | Register a GPU node |
+| GET | `/api/admin/nodes` | List all nodes |
+| DELETE | `/api/admin/nodes/{id}` | Remove a node |
+| POST | `/api/admin/nodes/{id}/refresh` | Refresh node sidecar |
+| POST | `/api/admin/backends/register` | Register new backend |
 | POST | `/admin/backends/{id}/disable` | Disable backend |
 | POST | `/admin/backends/{id}/enable` | Enable backend |
 | POST | `/admin/backends/{id}/refresh` | Refresh capabilities |
+| GET | `/api/admin/telemetry/overview` | Cluster telemetry overview |
+| GET | `/api/admin/telemetry/nodes/{id}/history` | Node GPU history |
 | GET | `/admin/queue` | View scheduler queue |
 | GET | `/admin/audit/search` | Search audit logs |
 
@@ -299,6 +332,82 @@ MindRouter2 implements **Weighted Deficit Round Robin (WDRR)** for fair resource
 4. **Backend Scoring**: Model residency, GPU utilization, queue depth
 
 See [docs/scheduler.md](docs/scheduler.md) for detailed algorithm specification.
+
+## GPU Sidecar Agent
+
+Each GPU node runs a lightweight **sidecar agent** (`sidecar/gpu_agent.py`) that exposes per-GPU hardware metrics via HTTP. MindRouter2's backend registry polls the sidecar once per node (not per backend) to collect telemetry.
+
+### What it collects
+
+- GPU utilization and memory utilization (%)
+- Memory usage (used/free/total GB)
+- Temperature (GPU and memory)
+- Power draw and power limit (watts)
+- Fan speed, SM/memory clocks
+- Running processes per GPU
+- Driver version and CUDA version
+
+### Deploying the sidecar
+
+The sidecar must run on each physical GPU server. It requires NVIDIA drivers and the NVIDIA Container Toolkit.
+
+**Option A: Docker Compose (development)**
+
+```bash
+# Start with the gpu profile (requires NVIDIA GPU on this machine)
+docker compose --profile gpu up gpu-sidecar
+```
+
+**Option B: Standalone Docker (production — run on each GPU node)**
+
+```bash
+# On each GPU server:
+docker build -t mindrouter-sidecar -f sidecar/Dockerfile.sidecar sidecar/
+docker run -d --name gpu-sidecar \
+  --gpus all \
+  -p 9101:9101 \
+  --restart unless-stopped \
+  mindrouter-sidecar
+```
+
+**Option C: Direct Python (no Docker)**
+
+```bash
+# On each GPU server:
+pip install fastapi uvicorn nvidia-ml-py
+cd sidecar/
+GPU_AGENT_PORT=9101 python gpu_agent.py
+```
+
+### Registering nodes with sidecars
+
+After starting the sidecar on a GPU server, register the node in MindRouter2:
+
+```bash
+curl -X POST http://mindrouter:8000/api/admin/nodes/register \
+  -H "Authorization: Bearer admin-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "gpu-server-1",
+    "hostname": "gpu1.example.com",
+    "sidecar_url": "http://gpu1.example.com:9101"
+  }'
+```
+
+Or use the admin dashboard at `/admin/nodes` to register nodes and view GPU telemetry.
+
+### Multi-backend nodes
+
+A single GPU server can host multiple inference endpoints. Assign specific GPUs to each backend using `gpu_indices`:
+
+```
+Node: gpu-server-1 (4x A100-80GB, sidecar at :9101)
+├── Backend: vllm-large  (gpu_indices: [0, 1])  ← uses GPUs 0-1
+├── Backend: vllm-small  (gpu_indices: [2])      ← uses GPU 2
+└── Backend: ollama-misc (gpu_indices: [3])      ← uses GPU 3
+```
+
+Each backend's telemetry (utilization, memory) is aggregated only from its assigned GPUs. Omit `gpu_indices` to use all GPUs on the node.
 
 ## Security
 

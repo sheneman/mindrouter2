@@ -137,7 +137,85 @@ docker compose -f docker-compose.prod.yml exec app alembic upgrade head
 docker compose -f docker-compose.prod.yml exec app python scripts/seed_dev_data.py
 ```
 
-## Step 10: Verify Deployment
+## Step 10: Deploy GPU Sidecar Agents
+
+Each GPU inference node needs a sidecar agent running to report GPU metrics back to MindRouter2.
+
+### On each GPU server:
+
+```bash
+# Option A: Run via Docker (recommended)
+# Copy the sidecar directory to the GPU server, or pull the repo
+scp -r sidecar/ user@gpu-server:/opt/mindrouter-sidecar/
+
+ssh user@gpu-server
+cd /opt/mindrouter-sidecar
+docker build -t mindrouter-sidecar -f Dockerfile.sidecar .
+docker run -d --name gpu-sidecar \
+  --gpus all \
+  -p 9101:9101 \
+  --restart unless-stopped \
+  mindrouter-sidecar
+
+# Verify it's working
+curl http://localhost:9101/health
+curl http://localhost:9101/gpu-info
+```
+
+```bash
+# Option B: Run directly (no Docker)
+pip install fastapi uvicorn nvidia-ml-py
+GPU_AGENT_PORT=9101 python gpu_agent.py
+```
+
+### Register the node in MindRouter2:
+
+```bash
+# Via API
+curl -X POST https://mindrouter.example.com/api/admin/nodes/register \
+  -H "Authorization: Bearer admin-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "gpu-server-1",
+    "hostname": "gpu1.example.com",
+    "sidecar_url": "http://gpu1.example.com:9101"
+  }'
+```
+
+Or use the admin dashboard at `/admin/nodes`.
+
+### Register backends on the node:
+
+```bash
+# Backend using all GPUs on the node
+curl -X POST https://mindrouter.example.com/api/admin/backends/register \
+  -H "Authorization: Bearer admin-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "ollama-gpu1",
+    "url": "http://gpu1.example.com:11434",
+    "engine": "ollama",
+    "max_concurrent": 4,
+    "node_id": 1
+  }'
+
+# Backend using specific GPUs (for multi-backend nodes)
+curl -X POST https://mindrouter.example.com/api/admin/backends/register \
+  -H "Authorization: Bearer admin-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "vllm-gpu1-01",
+    "url": "http://gpu1.example.com:8000",
+    "engine": "vllm",
+    "max_concurrent": 16,
+    "node_id": 1,
+    "gpu_indices": [0, 1]
+  }'
+```
+
+**Note:** `gpu_indices` is optional. Omit it to assign all GPUs on the node to the backend. Use it when multiple backends share the same physical server and you want each to report telemetry only for its assigned GPUs.
+
+## Step 11: Verify Deployment
 
 ```bash
 # Test health endpoint directly
@@ -148,7 +226,16 @@ curl -k https://mindrouter.example.com/healthz
 
 # Check all services are healthy
 docker compose -f docker-compose.prod.yml ps
+
+# Verify sidecar connectivity (from MindRouter2 server)
+curl http://gpu1.example.com:9101/health
+
+# Verify node appears in telemetry
+curl -H "Authorization: Bearer admin-api-key" \
+  https://mindrouter.example.com/api/admin/telemetry/overview
 ```
+
+**Firewall note:** The MindRouter2 server needs network access to each GPU node's sidecar port (default 9101). Ensure firewall rules allow this traffic between the gateway and GPU nodes.
 
 ## Ongoing Operations
 
@@ -236,3 +323,5 @@ docker compose -f docker-compose.prod.yml exec app \
 - [ ] Redis not exposed externally
 - [ ] CORS_ORIGINS set to actual domain
 - [ ] Disabled DEBUG mode
+- [ ] GPU sidecar ports (9101) not exposed to public internet
+- [ ] Sidecar agents running on all GPU nodes
