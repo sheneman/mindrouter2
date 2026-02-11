@@ -41,6 +41,7 @@
             <div class="alert alert-success alert-dismissible fade show" role="alert">
                 <i class="bi bi-check-circle"></i>
                 {% if success == 'registered' %}Backend registered successfully.
+                {% elif success == 'updated' %}Backend updated successfully.
                 {% elif success == 'disabled' %}Backend disabled.
                 {% elif success == 'enabled' %}Backend enabled.
                 {% elif success == 'refreshed' %}Backend capabilities refreshed.
@@ -139,6 +140,11 @@
                     </span>
                     <span>
                         <span class="text-muted me-3">{{ item.backend.url }}</span>
+                        <button class="btn btn-sm btn-outline-secondary" type="button"
+                                data-bs-toggle="collapse" data-bs-target="#edit-backend-{{ item.backend.id }}"
+                                title="Edit backend">
+                            <i class="bi bi-pencil"></i> Edit
+                        </button>
                         <form method="POST" action="/admin/backends/{{ item.backend.id }}/refresh" class="d-inline">
                             <button type="submit" class="btn btn-sm btn-outline-primary" title="Refresh capabilities">
                                 <i class="bi bi-arrow-clockwise"></i> Refresh
@@ -166,6 +172,79 @@
                     </span>
                 </div>
                 <div class="card-body">
+                    <!-- Collapsible Edit Form -->
+                    <div class="collapse mb-3" id="edit-backend-{{ item.backend.id }}">
+                        <div class="card card-body bg-light">
+                            <h6><i class="bi bi-pencil"></i> Edit Backend</h6>
+                            <form method="POST" action="/admin/backends/{{ item.backend.id }}/edit">
+                                <div class="row">
+                                    <div class="col-md-4 mb-3">
+                                        <label class="form-label">Name</label>
+                                        <input type="text" class="form-control" name="name"
+                                               value="{{ item.backend.name }}" required>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <label class="form-label">URL</label>
+                                        <input type="text" class="form-control" name="url"
+                                               value="{{ item.backend.url }}" required>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <label class="form-label">Engine</label>
+                                        <select class="form-select" name="engine" required>
+                                            <option value="ollama" {% if item.backend.engine.value == 'ollama' %}selected{% endif %}>Ollama</option>
+                                            <option value="vllm" {% if item.backend.engine.value == 'vllm' %}selected{% endif %}>vLLM</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-3 mb-3">
+                                        <label class="form-label">Max Concurrent</label>
+                                        <input type="number" class="form-control" name="max_concurrent"
+                                               value="{{ item.backend.max_concurrent }}" min="1">
+                                    </div>
+                                    <div class="col-md-3 mb-3">
+                                        <label class="form-label">GPU Memory (GB)</label>
+                                        <input type="number" class="form-control" name="gpu_memory_gb"
+                                               step="0.1" value="{{ item.backend.gpu_memory_gb or '' }}">
+                                    </div>
+                                    <div class="col-md-3 mb-3">
+                                        <label class="form-label">GPU Type</label>
+                                        <input type="text" class="form-control" name="gpu_type"
+                                               value="{{ item.backend.gpu_type or '' }}">
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-4 mb-3">
+                                        <label class="form-label">Node</label>
+                                        <select class="form-select" name="node_id">
+                                            <option value="">None (standalone)</option>
+                                            {% if nodes %}
+                                            {% for node in nodes %}
+                                            <option value="{{ node.id }}" {% if item.backend.node_id == node.id %}selected{% endif %}>
+                                                {{ node.name }}{% if node.hostname %} ({{ node.hostname }}){% endif %}
+                                            </option>
+                                            {% endfor %}
+                                            {% endif %}
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <label class="form-label">GPU Indices</label>
+                                        <input type="text" class="form-control" name="gpu_indices"
+                                               value="{{ item.backend.gpu_indices | join(', ') if item.backend.gpu_indices else '' }}"
+                                               placeholder="e.g., 0,1,2 (blank = all)">
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn btn-primary btn-sm">
+                                    <i class="bi bi-check-lg"></i> Save Changes
+                                </button>
+                                <button type="button" class="btn btn-secondary btn-sm"
+                                        data-bs-toggle="collapse" data-bs-target="#edit-backend-{{ item.backend.id }}">
+                                    Cancel
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
                     <div class="row">
                         <div class="col-md-4">
                             <h6>Configuration</h6>

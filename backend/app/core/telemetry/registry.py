@@ -423,6 +423,132 @@ class BackendRegistry:
         async with get_async_db_context() as db:
             return await crud.get_all_nodes(db=db)
 
+    async def update_backend(self, backend_id: int, **kwargs) -> "Backend":
+        """Update a backend's editable fields and reconcile in-memory state.
+
+        Supported kwargs: name, url, engine, max_concurrent, gpu_memory_gb,
+        gpu_type, priority, node_id, gpu_indices, _clear_fields.
+        """
+        async with self._lock:
+            # Capture old state for in-memory reconciliation
+            async with get_async_db_context() as db:
+                old_backend = await crud.get_backend_by_id(db, backend_id)
+                if not old_backend:
+                    raise ValueError(f"Backend {backend_id} not found")
+                old_url = old_backend.url
+                old_engine = old_backend.engine
+                old_node_id = old_backend.node_id
+                old_gpu_indices = old_backend.gpu_indices
+
+            # Persist to DB
+            async with get_async_db_context() as db:
+                backend = await crud.update_backend(db, backend_id, **kwargs)
+                if not backend:
+                    raise ValueError(f"Backend {backend_id} not found")
+                # Capture updated values while session is open
+                new_url = backend.url
+                new_engine = backend.engine
+                new_node_id = backend.node_id
+                new_gpu_indices = backend.gpu_indices
+
+            # Reconcile adapter if url or engine changed
+            new_engine_val = kwargs.get("engine")
+            new_url_val = kwargs.get("url")
+            if new_url_val or new_engine_val:
+                old_adapter = self._adapters.pop(backend_id, None)
+                if old_adapter:
+                    await old_adapter.close()
+                # Need a lightweight object to pass to _create_adapter
+                class _Stub:
+                    pass
+                stub = _Stub()
+                stub.url = new_url
+                stub.engine = new_engine
+                self._adapters[backend_id] = self._create_adapter(stub)
+
+            # Reconcile node-backend mapping if node_id changed
+            clear_fields = set(kwargs.get("_clear_fields", []))
+            node_changed = "node_id" in kwargs or "node_id" in clear_fields
+            if node_changed:
+                # Remove from old node
+                if old_node_id and old_node_id in self._node_backends:
+                    self._node_backends[old_node_id].discard(backend_id)
+                    if not self._node_backends[old_node_id]:
+                        del self._node_backends[old_node_id]
+                        sidecar = self._sidecar_clients.pop(old_node_id, None)
+                        if sidecar:
+                            await sidecar.close()
+                # Add to new node
+                if new_node_id:
+                    self._node_backends.setdefault(new_node_id, set()).add(backend_id)
+                    if new_node_id not in self._sidecar_clients:
+                        async with get_async_db_context() as db:
+                            node = await crud.get_node_by_id(db, new_node_id)
+                        if node and node.sidecar_url:
+                            self._sidecar_clients[new_node_id] = SidecarClient(
+                                node.sidecar_url,
+                                timeout=self._settings.sidecar_timeout,
+                                sidecar_key=node.sidecar_key,
+                            )
+
+            # Reconcile gpu_indices if changed
+            if "gpu_indices" in kwargs or "gpu_indices" in clear_fields:
+                self._backend_gpu_indices[backend_id] = new_gpu_indices
+
+        # Re-read the final object outside the lock for the return value
+        async with get_async_db_context() as db:
+            backend = await crud.get_backend_by_id(db, backend_id)
+
+        logger.info("backend_updated", backend_id=backend_id, fields=list(kwargs.keys()))
+        return backend
+
+    async def update_node(self, node_id: int, **kwargs) -> "Node":
+        """Update a node's editable fields and reconcile in-memory state.
+
+        Supported kwargs: name, hostname, sidecar_url, sidecar_key, _clear_fields.
+        """
+        async with self._lock:
+            # Persist to DB
+            async with get_async_db_context() as db:
+                node = await crud.update_node(db, node_id, **kwargs)
+                if not node:
+                    raise ValueError(f"Node {node_id} not found")
+                new_sidecar_url = node.sidecar_url
+                new_sidecar_key = node.sidecar_key
+
+            # Reconcile sidecar client if url or key changed
+            clear_fields = set(kwargs.get("_clear_fields", []))
+            sidecar_changed = (
+                "sidecar_url" in kwargs or "sidecar_key" in kwargs
+                or "sidecar_url" in clear_fields or "sidecar_key" in clear_fields
+            )
+            if sidecar_changed:
+                old_client = self._sidecar_clients.pop(node_id, None)
+                if old_client:
+                    await old_client.close()
+                if new_sidecar_url:
+                    self._sidecar_clients[node_id] = SidecarClient(
+                        new_sidecar_url,
+                        timeout=self._settings.sidecar_timeout,
+                        sidecar_key=new_sidecar_key,
+                    )
+                self._node_sidecar_data.pop(node_id, None)
+
+        # Re-read the final object for the return value
+        async with get_async_db_context() as db:
+            node = await crud.get_node_by_id(db, node_id)
+
+        logger.info("node_updated", node_id=node_id, fields=list(kwargs.keys()))
+
+        # Trigger immediate sidecar poll if URL/key changed
+        if sidecar_changed and node_id in self._sidecar_clients:
+            try:
+                await self._collect_node_telemetry(node_id)
+            except Exception as e:
+                logger.warning("sidecar_poll_after_update_failed", node_id=node_id, error=str(e))
+
+        return node
+
     async def refresh_node(self, node_id: int) -> bool:
         """Force refresh sidecar data for a node."""
         if node_id not in self._sidecar_clients:

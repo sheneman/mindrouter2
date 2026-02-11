@@ -96,6 +96,27 @@ class BackendResponse(BaseModel):
         from_attributes = True
 
 
+class BackendUpdateRequest(BaseModel):
+    """Request to update an existing backend. Only provided fields are changed."""
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    url: Optional[str] = Field(None, min_length=1)
+    engine: Optional[BackendEngine] = None
+    max_concurrent: Optional[int] = Field(None, ge=1)
+    gpu_memory_gb: Optional[float] = None
+    gpu_type: Optional[str] = None
+    priority: Optional[int] = None
+    node_id: Optional[int] = None
+    gpu_indices: Optional[List[int]] = None
+
+
+class NodeUpdateRequest(BaseModel):
+    """Request to update an existing node. Only provided fields are changed."""
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    hostname: Optional[str] = None
+    sidecar_url: Optional[str] = None
+    sidecar_key: Optional[str] = None
+
+
 class QueueStats(BaseModel):
     """Queue statistics."""
     total: int
@@ -318,6 +339,139 @@ async def list_backends(
         )
         for b in backends
     ]
+
+
+@router.patch("/backends/{backend_id}", response_model=BackendResponse)
+async def update_backend(
+    backend_id: int,
+    request: BackendUpdateRequest,
+    admin: User = Depends(require_admin()),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Update an existing backend. Only provided fields are changed."""
+    backend = await crud.get_backend_by_id(db, backend_id)
+    if not backend:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Backend not found",
+        )
+
+    # Build kwargs from the request, only including explicitly set fields
+    raw = request.model_dump(exclude_unset=True)
+    if not raw:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No fields to update",
+        )
+
+    # Determine which fields to explicitly clear (set to null in JSON)
+    all_fields = request.model_dump()
+    clear_fields = [k for k in raw if all_fields[k] is None]
+    kwargs = {k: v for k, v in raw.items() if v is not None}
+    if clear_fields:
+        kwargs["_clear_fields"] = clear_fields
+
+    registry = get_registry()
+    try:
+        updated = await registry.update_backend(backend_id, **kwargs)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except Exception as e:
+        error_msg = str(e).lower()
+        if "duplicate" in error_msg or "unique" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Unique constraint violation: {e}",
+            )
+        raise
+
+    logger.info(
+        "backend_updated_by_admin",
+        admin_id=admin.id,
+        backend_id=backend_id,
+        fields=list(raw.keys()),
+    )
+
+    return BackendResponse(
+        id=updated.id,
+        name=updated.name,
+        url=updated.url,
+        engine=updated.engine.value,
+        status=updated.status.value,
+        max_concurrent=updated.max_concurrent,
+        current_concurrent=updated.current_concurrent,
+        gpu_memory_gb=updated.gpu_memory_gb,
+        gpu_type=updated.gpu_type,
+        node_id=updated.node_id,
+        node_name=updated.node.name if updated.node else None,
+        gpu_indices=updated.gpu_indices,
+        supports_vision=updated.supports_vision,
+        supports_embeddings=updated.supports_embeddings,
+        version=updated.version,
+        last_health_check=updated.last_health_check,
+    )
+
+
+@router.patch("/nodes/{node_id}", response_model=NodeResponse)
+async def update_node(
+    node_id: int,
+    request: NodeUpdateRequest,
+    admin: User = Depends(require_admin()),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Update an existing node. Only provided fields are changed."""
+    node = await crud.get_node_by_id(db, node_id)
+    if not node:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Node not found",
+        )
+
+    raw = request.model_dump(exclude_unset=True)
+    if not raw:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No fields to update",
+        )
+
+    all_fields = request.model_dump()
+    clear_fields = [k for k in raw if all_fields[k] is None]
+    kwargs = {k: v for k, v in raw.items() if v is not None}
+    if clear_fields:
+        kwargs["_clear_fields"] = clear_fields
+
+    registry = get_registry()
+    try:
+        updated = await registry.update_node(node_id, **kwargs)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except Exception as e:
+        error_msg = str(e).lower()
+        if "duplicate" in error_msg or "unique" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Unique constraint violation: {e}",
+            )
+        raise
+
+    logger.info(
+        "node_updated_by_admin",
+        admin_id=admin.id,
+        node_id=node_id,
+        fields=list(raw.keys()),
+    )
+
+    return NodeResponse(
+        id=updated.id,
+        name=updated.name,
+        hostname=updated.hostname,
+        sidecar_url=updated.sidecar_url,
+        sidecar_key_set=bool(updated.sidecar_key),
+        status=updated.status.value,
+        gpu_count=updated.gpu_count,
+        driver_version=updated.driver_version,
+        cuda_version=updated.cuda_version,
+    )
 
 
 # Node Management

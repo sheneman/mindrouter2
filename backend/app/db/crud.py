@@ -495,6 +495,107 @@ async def update_backend_status(
     return backend
 
 
+async def update_backend(
+    db: AsyncSession,
+    backend_id: int,
+    name: Optional[str] = None,
+    url: Optional[str] = None,
+    engine: Optional[BackendEngine] = None,
+    max_concurrent: Optional[int] = None,
+    gpu_memory_gb: Optional[float] = None,
+    gpu_type: Optional[str] = None,
+    priority: Optional[int] = None,
+    node_id: Optional[int] = None,
+    gpu_indices: Optional[list] = None,
+    _clear_fields: Optional[list] = None,
+) -> Optional[Backend]:
+    """Update editable fields on a backend.
+
+    Only non-None kwargs are applied. To explicitly clear a nullable field,
+    include its name in _clear_fields (e.g. _clear_fields=["gpu_memory_gb"]).
+    """
+    result = await db.execute(
+        select(Backend)
+        .options(selectinload(Backend.models), selectinload(Backend.node))
+        .where(Backend.id == backend_id)
+    )
+    backend = result.scalar_one_or_none()
+    if not backend:
+        return None
+
+    clear = set(_clear_fields or [])
+
+    if name is not None:
+        backend.name = name
+    if url is not None:
+        backend.url = url
+    if engine is not None:
+        backend.engine = engine
+    if max_concurrent is not None:
+        backend.max_concurrent = max_concurrent
+    if gpu_memory_gb is not None:
+        backend.gpu_memory_gb = gpu_memory_gb
+    elif "gpu_memory_gb" in clear:
+        backend.gpu_memory_gb = None
+    if gpu_type is not None:
+        backend.gpu_type = gpu_type
+    elif "gpu_type" in clear:
+        backend.gpu_type = None
+    if priority is not None:
+        backend.priority = priority
+    if node_id is not None:
+        backend.node_id = node_id
+    elif "node_id" in clear:
+        backend.node_id = None
+    if gpu_indices is not None:
+        backend.gpu_indices = gpu_indices
+    elif "gpu_indices" in clear:
+        backend.gpu_indices = None
+
+    await db.flush()
+    return backend
+
+
+async def update_node(
+    db: AsyncSession,
+    node_id: int,
+    name: Optional[str] = None,
+    hostname: Optional[str] = None,
+    sidecar_url: Optional[str] = None,
+    sidecar_key: Optional[str] = None,
+    _clear_fields: Optional[list] = None,
+) -> Optional[Node]:
+    """Update editable fields on a node.
+
+    Only non-None kwargs are applied. To explicitly clear a nullable field,
+    include its name in _clear_fields.
+    """
+    result = await db.execute(select(Node).where(Node.id == node_id))
+    node = result.scalar_one_or_none()
+    if not node:
+        return None
+
+    clear = set(_clear_fields or [])
+
+    if name is not None:
+        node.name = name
+    if hostname is not None:
+        node.hostname = hostname
+    elif "hostname" in clear:
+        node.hostname = None
+    if sidecar_url is not None:
+        node.sidecar_url = sidecar_url
+    elif "sidecar_url" in clear:
+        node.sidecar_url = None
+    if sidecar_key is not None:
+        node.sidecar_key = sidecar_key
+    elif "sidecar_key" in clear:
+        node.sidecar_key = None
+
+    await db.flush()
+    return node
+
+
 async def delete_backend(db: AsyncSession, backend_id: int) -> bool:
     """Delete a backend and its associated data."""
     # Bulk-delete child rows with NOT NULL FK

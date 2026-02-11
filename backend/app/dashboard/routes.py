@@ -550,6 +550,56 @@ async def register_node(
         return RedirectResponse(url="/admin/nodes?error=Registration+failed", status_code=302)
 
 
+@dashboard_router.post("/admin/nodes/{node_id}/edit")
+async def edit_node(
+    request: Request,
+    node_id: int,
+    name: str = Form(...),
+    hostname: Optional[str] = Form(None),
+    sidecar_url: Optional[str] = Form(None),
+    sidecar_key: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Edit an existing node."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or user.role != UserRole.ADMIN:
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    try:
+        kwargs = {"name": name}
+        clear_fields = []
+
+        hostname_val = hostname if hostname else None
+        if hostname_val is not None:
+            kwargs["hostname"] = hostname_val
+        else:
+            clear_fields.append("hostname")
+
+        sidecar_url_val = sidecar_url if sidecar_url else None
+        if sidecar_url_val is not None:
+            kwargs["sidecar_url"] = sidecar_url_val
+        else:
+            clear_fields.append("sidecar_url")
+
+        # Empty sidecar_key means "keep current" — only update if provided
+        if sidecar_key and sidecar_key.strip():
+            kwargs["sidecar_key"] = sidecar_key.strip()
+
+        if clear_fields:
+            kwargs["_clear_fields"] = clear_fields
+
+        registry = get_registry()
+        await registry.update_node(node_id, **kwargs)
+        return RedirectResponse(url="/admin/nodes?success=updated", status_code=302)
+    except Exception as e:
+        error_msg = str(e).replace(" ", "+")
+        return RedirectResponse(url=f"/admin/nodes?error={error_msg}", status_code=302)
+
+
 @dashboard_router.post("/admin/nodes/{node_id}/remove")
 async def remove_node(
     request: Request,
@@ -695,6 +745,73 @@ async def register_backend(
         return RedirectResponse(url="/admin/backends?success=registered", status_code=302)
     except Exception:
         return RedirectResponse(url="/admin/backends?error=Registration+failed", status_code=302)
+
+
+@dashboard_router.post("/admin/backends/{backend_id}/edit")
+async def edit_backend(
+    request: Request,
+    backend_id: int,
+    name: str = Form(...),
+    url: str = Form(...),
+    engine: str = Form(...),
+    max_concurrent: int = Form(4),
+    gpu_memory_gb: Optional[str] = Form(None),
+    gpu_type: Optional[str] = Form(None),
+    node_id: Optional[str] = Form(None),
+    gpu_indices: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Edit an existing backend."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or user.role != UserRole.ADMIN:
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    try:
+        engine_enum = BackendEngine(engine)
+        gpu_mem = float(gpu_memory_gb) if gpu_memory_gb else None
+        gpu_type_val = gpu_type if gpu_type else None
+        node_id_val = int(node_id) if node_id else None
+
+        gpu_indices_val = None
+        if gpu_indices and gpu_indices.strip():
+            gpu_indices_val = [int(x.strip()) for x in gpu_indices.split(",") if x.strip()]
+
+        kwargs = {
+            "name": name,
+            "url": url,
+            "engine": engine_enum,
+            "max_concurrent": max_concurrent,
+        }
+        clear_fields = []
+        if gpu_mem is not None:
+            kwargs["gpu_memory_gb"] = gpu_mem
+        else:
+            clear_fields.append("gpu_memory_gb")
+        if gpu_type_val is not None:
+            kwargs["gpu_type"] = gpu_type_val
+        else:
+            clear_fields.append("gpu_type")
+        if node_id_val is not None:
+            kwargs["node_id"] = node_id_val
+        else:
+            clear_fields.append("node_id")
+        if gpu_indices_val is not None:
+            kwargs["gpu_indices"] = gpu_indices_val
+        else:
+            clear_fields.append("gpu_indices")
+        if clear_fields:
+            kwargs["_clear_fields"] = clear_fields
+
+        registry = get_registry()
+        await registry.update_backend(backend_id, **kwargs)
+        return RedirectResponse(url="/admin/backends?success=updated", status_code=302)
+    except Exception as e:
+        error_msg = str(e).replace(" ", "+")
+        return RedirectResponse(url=f"/admin/backends?error={error_msg}", status_code=302)
 
 
 @dashboard_router.post("/admin/backends/{backend_id}/disable")

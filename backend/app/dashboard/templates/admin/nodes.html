@@ -27,6 +27,7 @@
             <div class="alert alert-success alert-dismissible fade show" role="alert">
                 <i class="bi bi-check-circle"></i>
                 {% if success == 'registered' %}Node registered successfully.
+                {% elif success == 'updated' %}Node updated successfully.
                 {% elif success == 'removed' %}Node removed successfully.
                 {% elif success == 'refreshed' %}Node sidecar refreshed.
                 {% else %}Operation completed successfully.{% endif %}
@@ -91,6 +92,11 @@
                         {% endif %}
                     </span>
                     <span>
+                        <button class="btn btn-sm btn-outline-secondary" type="button"
+                                data-bs-toggle="collapse" data-bs-target="#edit-node-{{ item.node.id }}"
+                                title="Edit node">
+                            <i class="bi bi-pencil"></i> Edit
+                        </button>
                         {% if item.node.sidecar_url %}
                         <form method="POST" action="/admin/nodes/{{ item.node.id }}/refresh" class="d-inline">
                             <button type="submit" class="btn btn-sm btn-outline-primary" title="Refresh sidecar">
@@ -107,6 +113,46 @@
                     </span>
                 </div>
                 <div class="card-body">
+                    <!-- Collapsible Edit Form -->
+                    <div class="collapse mb-3" id="edit-node-{{ item.node.id }}">
+                        <div class="card card-body bg-light">
+                            <h6><i class="bi bi-pencil"></i> Edit Node</h6>
+                            <form method="POST" action="/admin/nodes/{{ item.node.id }}/edit">
+                                <div class="row">
+                                    <div class="col-md-3 mb-3">
+                                        <label class="form-label">Name</label>
+                                        <input type="text" class="form-control" name="name"
+                                               value="{{ item.node.name }}" required>
+                                    </div>
+                                    <div class="col-md-3 mb-3">
+                                        <label class="form-label">Hostname</label>
+                                        <input type="text" class="form-control" name="hostname"
+                                               value="{{ item.node.hostname or '' }}"
+                                               placeholder="e.g., gpu-server-01.example.com">
+                                    </div>
+                                    <div class="col-md-3 mb-3">
+                                        <label class="form-label">Sidecar URL</label>
+                                        <input type="text" class="form-control" name="sidecar_url"
+                                               value="{{ item.node.sidecar_url or '' }}"
+                                               placeholder="http://host:8007">
+                                    </div>
+                                    <div class="col-md-3 mb-3">
+                                        <label class="form-label">Sidecar Secret Key</label>
+                                        <input type="password" class="form-control" name="sidecar_key"
+                                               placeholder="Leave blank to keep current key">
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn btn-primary btn-sm">
+                                    <i class="bi bi-check-lg"></i> Save Changes
+                                </button>
+                                <button type="button" class="btn btn-secondary btn-sm"
+                                        data-bs-toggle="collapse" data-bs-target="#edit-node-{{ item.node.id }}">
+                                    Cancel
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
                     <div class="row">
                         <div class="col-md-4">
                             <h6>Hardware Info</h6>
