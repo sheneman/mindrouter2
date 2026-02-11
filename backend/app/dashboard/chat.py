@@ -32,7 +32,7 @@ from backend.app.core.translators.openai_in import OpenAIInTranslator
 from backend.app.db import crud
 from backend.app.db import chat_crud
 from backend.app.db.models import ApiKey, User
-from backend.app.db.session import get_async_db
+from backend.app.db.session import get_async_db, get_async_db_context
 from backend.app.dashboard.routes import get_session_user_id
 from backend.app.logging_config import get_logger
 from backend.app.services.inference import InferenceService
@@ -574,6 +574,17 @@ def _write_file(path: str, data: bytes):
 # Completions (modified: server-side message building from DB)
 # ---------------------------------------------------------------------------
 
+async def _save_assistant_message(conversation_id: int, content: str):
+    """Save an assistant message using an independent DB session.
+
+    Called from the streaming generator's finally block via asyncio.shield()
+    so it survives ASGI task cancellation.
+    """
+    async with get_async_db_context() as save_db:
+        await chat_crud.create_message(save_db, conversation_id, "assistant", content)
+        await save_db.commit()
+
+
 @chat_router.post("/chat/api/completions")
 async def chat_completions(
     request: Request,
@@ -684,11 +695,17 @@ async def chat_completions(
                 yield error_data.encode()
                 yield b"data: [DONE]\n\n"
             finally:
-                # Save assistant message to DB
+                # Save assistant message using an independent DB session,
+                # shielded from ASGI cancellation.  When the client finishes
+                # reading the stream, uvicorn may cancel the task — we must
+                # protect the DB write from that.
                 if full_content:
                     try:
-                        await chat_crud.create_message(db, conversation_id, "assistant", full_content)
-                        await db.commit()
+                        await asyncio.shield(_save_assistant_message(
+                            conversation_id, full_content
+                        ))
+                    except asyncio.CancelledError:
+                        pass
                     except Exception as e:
                         logger.warning("failed_to_save_assistant_message", error=str(e))
 
