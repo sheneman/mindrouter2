@@ -116,8 +116,8 @@ def create_app() -> FastAPI:
         version=settings.app_version,
         description="LLM Inference Load Balancer for Ollama and vLLM backends",
         lifespan=lifespan,
-        docs_url="/docs" if settings.debug else None,
-        redoc_url="/redoc" if settings.debug else None,
+        docs_url="/docs",
+        redoc_url="/redoc",
     )
 
     # CORS middleware
