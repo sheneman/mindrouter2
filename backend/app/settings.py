@@ -146,6 +146,15 @@ class Settings(BaseSettings):
     # CORS
     cors_origins: List[str] = ["http://localhost:3000", "http://localhost:8000"]
 
+    # Chat UI
+    chat_files_path: str = "/data/chat_files"
+    chat_upload_max_size_mb: int = 10
+    chat_upload_allowed_extensions: List[str] = [
+        ".txt", ".md", ".csv", ".json", ".html", ".htm", ".log",
+        ".docx", ".xlsx", ".pdf",
+        ".jpg", ".jpeg", ".png", ".gif", ".webp",
+    ]
+
     # Tokenizer
     default_tokenizer: str = "cl100k_base"
 

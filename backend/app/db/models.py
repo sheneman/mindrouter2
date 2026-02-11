@@ -634,3 +634,80 @@ class SchedulerDecision(Base):
 
     # Relationships
     request: Mapped["Request"] = relationship("Request", back_populates="scheduler_decision")
+
+
+# Chat Models
+class ChatConversation(Base, TimestampMixin):
+    """Chat conversation for web UI."""
+
+    __tablename__ = "chat_conversations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False, default="New Chat")
+    model: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+    # Relationships
+    user: Mapped["User"] = relationship("User")
+    messages: Mapped[List["ChatMessage"]] = relationship(
+        "ChatMessage", back_populates="conversation", cascade="all, delete-orphan",
+        order_by="ChatMessage.created_at",
+    )
+
+    __table_args__ = (
+        Index("ix_chat_conversations_user_updated", "user_id", "updated_at"),
+    )
+
+
+class ChatMessage(Base, TimestampMixin):
+    """Individual message within a chat conversation."""
+
+    __tablename__ = "chat_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    conversation_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("chat_conversations.id"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Relationships
+    conversation: Mapped["ChatConversation"] = relationship(
+        "ChatConversation", back_populates="messages"
+    )
+    attachments: Mapped[List["ChatAttachment"]] = relationship(
+        "ChatAttachment", back_populates="message"
+    )
+
+    __table_args__ = (
+        Index("ix_chat_messages_conv_created", "conversation_id", "created_at"),
+    )
+
+
+class ChatAttachment(Base, TimestampMixin):
+    """File attachment for a chat message."""
+
+    __tablename__ = "chat_attachments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    message_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("chat_messages.id"), nullable=True
+    )
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    is_image: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    storage_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    thumbnail_base64: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    extracted_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    file_size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    # Relationships
+    message: Mapped[Optional["ChatMessage"]] = relationship(
+        "ChatMessage", back_populates="attachments"
+    )
+
+    __table_args__ = (
+        Index("ix_chat_attachments_message", "message_id"),
+        Index("ix_chat_attachments_user_created", "user_id", "created_at"),
+    )

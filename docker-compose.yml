@@ -10,10 +10,12 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
       - ARTIFACT_STORAGE_PATH=/data/artifacts
+      - CHAT_FILES_PATH=/data/chat_files
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - DEBUG=${DEBUG:-false}
     volumes:
       - artifact_data:/data/artifacts
+      - chat_data:/data/chat_files
       - ./backend:/app/backend:ro
     depends_on:
       mariadb:
@@ -125,6 +127,7 @@ volumes:
   mariadb_data:
   redis_data:
   artifact_data:
+  chat_data:
 
 networks:
   mindrouter_network:

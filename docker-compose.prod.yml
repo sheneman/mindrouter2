@@ -9,6 +9,7 @@ services:
       - .env.prod
     volumes:
       - /opt/mindrouter2/artifacts:/data/artifacts
+      - /opt/mindrouter2/chat_files:/data/chat_files
       - /opt/mindrouter2/logs:/var/log/mindrouter
     depends_on:
       mariadb:
