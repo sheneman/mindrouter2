@@ -602,6 +602,30 @@
     </div>
 </div>
 
+<!-- Vision warning modal -->
+<div class="modal fade" id="visionWarningModal" tabindex="-1" aria-labelledby="visionWarningLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-warning-subtle">
+                <h5 class="modal-title" id="visionWarningLabel">
+                    <i class="bi bi-exclamation-triangle"></i> Non-Vision Model Selected
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>You are uploading an image, but the currently selected model
+                (<strong id="visionWarningModelName"></strong>) does not support vision.</p>
+                <p>Image content will not be visible to this model. Please select a
+                vision-capable model (marked with <em>"(vision)"</em>) to use images.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-warning" id="visionWarningContinueBtn">Upload Anyway</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Image modal -->
 <div class="image-modal-backdrop" id="imageModal">
     <div class="image-modal-content">
@@ -635,6 +659,7 @@
     let pendingFiles = [];   // [{attachment_id, filename, is_image, thumbnail, content_type}]
     let abortController = null;
     let isStreaming = false;
+    let modelCapabilities = {};  // { modelId: { vision: bool, ... } }
 
     // ---------------------------------------------------------------
     // DOM refs
@@ -1108,11 +1133,15 @@
             const res = await fetch('/chat/api/models');
             const data = await res.json();
             modelSelect.innerHTML = '';
+            modelCapabilities = {};
             if (data.models && data.models.length) {
                 data.models.forEach(m => {
                     const opt = document.createElement('option');
                     opt.value = m.id;
                     opt.textContent = m.id;
+                    if (m.capabilities) {
+                        modelCapabilities[m.id] = m.capabilities;
+                    }
                     if (m.capabilities && m.capabilities.vision) {
                         opt.textContent += ' (vision)';
                     }
@@ -1128,6 +1157,11 @@
         } catch (e) {
             modelSelect.innerHTML = '<option value="">Failed to load models</option>';
         }
+    }
+
+    function currentModelSupportsVision() {
+        const caps = modelCapabilities[modelSelect.value];
+        return caps && caps.vision;
     }
 
     modelSelect.addEventListener('change', () => {
@@ -1152,6 +1186,53 @@
     });
 
     async function handleFiles(fileList) {
+        const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+        const hasImages = Array.from(fileList).some(f => {
+            const ext = f.name.split('.').pop().toLowerCase();
+            return imageExts.includes(ext);
+        });
+
+        if (hasImages && !currentModelSupportsVision()) {
+            // Show warning modal and wait for user decision
+            const proceed = await showVisionWarning();
+            if (!proceed) return;
+        }
+
+        await uploadFiles(fileList);
+    }
+
+    function showVisionWarning() {
+        return new Promise((resolve) => {
+            const modalEl = document.getElementById('visionWarningModal');
+            const modelNameEl = document.getElementById('visionWarningModelName');
+            const continueBtn = document.getElementById('visionWarningContinueBtn');
+            modelNameEl.textContent = modelSelect.value || 'unknown';
+
+            const modal = new bootstrap.Modal(modalEl);
+            let resolved = false;
+
+            function cleanup() {
+                continueBtn.removeEventListener('click', onContinue);
+                modalEl.removeEventListener('hidden.bs.modal', onHidden);
+            }
+            function onContinue() {
+                resolved = true;
+                cleanup();
+                modal.hide();
+                resolve(true);
+            }
+            function onHidden() {
+                cleanup();
+                if (!resolved) resolve(false);
+            }
+
+            continueBtn.addEventListener('click', onContinue);
+            modalEl.addEventListener('hidden.bs.modal', onHidden);
+            modal.show();
+        });
+    }
+
+    async function uploadFiles(fileList) {
         for (const file of fileList) {
             const chipId = 'chip-' + Math.random().toString(36).substr(2, 9);
             addFileChip(chipId, file.name, true);
@@ -1164,7 +1245,9 @@
                 const data = await res.json();
                 if (!res.ok) {
                     removeFileChip(chipId);
-                    alert(data.error || 'Upload failed');
+                    const errMsg = typeof data.error === 'string' ? data.error
+                        : (data.error?.message || 'Upload failed');
+                    alert(errMsg);
                     continue;
                 }
                 updateFileChip(chipId, data);
