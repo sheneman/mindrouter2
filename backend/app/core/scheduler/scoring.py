@@ -118,10 +118,11 @@ class BackendScorer:
         # Check modality support
         if job.modality == Modality.VISION or job.requires_vision:
             constraints.supports_modality = backend.supports_vision
-            # Also check if the specific model supports vision
+            # Model-level check is authoritative — if the specific model
+            # doesn't support vision, override the backend-level flag.
             for m in backend_models:
-                if m.name == job.model and m.supports_vision:
-                    constraints.supports_modality = True
+                if m.name == job.model:
+                    constraints.supports_modality = m.supports_vision
                     break
         elif job.modality == Modality.EMBEDDING:
             constraints.supports_modality = backend.supports_embeddings

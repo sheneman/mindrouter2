@@ -177,12 +177,15 @@ def _process_image(file_bytes: bytes) -> bytes:
     return buf.getvalue()
 
 
-def _build_llm_messages(messages_with_attachments):
+def _build_llm_messages(messages_with_attachments, *, model_supports_vision: bool = True):
     """Build OpenAI-format messages array from DB messages with attachments.
 
     Each message dict has: role, content, attachments (list of ChatAttachment ORM objects).
     For images, reads processed JPEG from filesystem and builds image_url blocks.
     For documents, includes extracted_text as context.
+
+    When *model_supports_vision* is False, image blocks are replaced with a
+    text placeholder so that non-vision models never receive image data.
     """
     api_msgs = []
     for msg in messages_with_attachments:
@@ -200,6 +203,12 @@ def _build_llm_messages(messages_with_attachments):
 
             for att in attachments:
                 if att.is_image and att.storage_path:
+                    if not model_supports_vision:
+                        content_blocks.append({
+                            "type": "text",
+                            "text": f"[Image omitted — model does not support vision: {att.filename}]",
+                        })
+                        continue
                     # Read processed image from filesystem
                     try:
                         with open(att.storage_path, "rb") as f:
@@ -642,8 +651,21 @@ async def chat_completions(
     # Load full conversation history from DB
     messages = await chat_crud.get_conversation_messages(db, conversation_id)
 
+    # Look up whether the target model supports vision
+    model_supports_vision = False
+    registry = get_registry()
+    healthy_backends = await registry.get_healthy_backends()
+    for b in healthy_backends:
+        b_models = await registry.get_backend_models(b.id)
+        for m in b_models:
+            if m.name == model and m.supports_vision:
+                model_supports_vision = True
+                break
+        if model_supports_vision:
+            break
+
     # Build OpenAI messages array from DB records
-    api_messages = _build_llm_messages(messages)
+    api_messages = _build_llm_messages(messages, model_supports_vision=model_supports_vision)
 
     # Build canonical request
     try:
