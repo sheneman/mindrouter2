@@ -229,7 +229,8 @@ class OllamaAdapter:
                 # Determine if model supports vision
                 supports_vision = False
                 family = details.get("family", "").lower()
-                if "llava" in name.lower() or "vision" in name.lower():
+                name_lower = name.lower()
+                if any(x in name_lower for x in ["llava", "vision", "-vl-", "-vl:"]):
                     supports_vision = True
 
                 # Estimate parameter count from name or details

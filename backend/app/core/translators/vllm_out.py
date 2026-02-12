@@ -280,9 +280,9 @@ class VLLMOutTranslator:
                                 )
 
                             yield CanonicalStreamChunk(
-                                id=data.get("id", request_id),
-                                created=data.get("created", int(time.time())),
-                                model=data.get("model", model),
+                                id=data.get("id") or request_id or f"chatcmpl-{int(time.time())}",
+                                created=data.get("created") or int(time.time()),
+                                model=data.get("model") or model,
                                 choices=choices,
                                 usage=usage,
                             )

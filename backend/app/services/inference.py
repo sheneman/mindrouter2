@@ -109,6 +109,9 @@ class InferenceService:
             request, user, api_key, http_request, "/v1/chat/completions"
         )
 
+        # Propagate request UUID so translators can use it as chunk/response ID
+        request.request_id = db_request.request_uuid
+
         # Create job
         job = self._scheduler.create_job_from_chat_request(
             request, user.id, api_key.id
@@ -149,6 +152,9 @@ class InferenceService:
         db_request = await self._create_request_record(
             request, user, api_key, http_request, "/v1/chat/completions"
         )
+
+        # Propagate request UUID so translators can use it as chunk ID
+        request.request_id = db_request.request_uuid
 
         job = self._scheduler.create_job_from_chat_request(
             request, user.id, api_key.id

@@ -35,6 +35,9 @@
                     </li>
                     {% if user %}
                     <li class="nav-item">
+                        <a class="nav-link" href="/chat">Chat</a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="/dashboard">Dashboard</a>
                     </li>
                     {% if user.role.value == 'admin' %}

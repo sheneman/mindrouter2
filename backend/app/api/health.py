@@ -14,7 +14,7 @@
 
 """Health check and metrics endpoints."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
 from fastapi import APIRouter, Response
@@ -25,9 +25,11 @@ from prometheus_client import (
     Histogram,
     generate_latest,
 )
+from sqlalchemy import and_, func, select
 
 from backend.app.core.scheduler.policy import get_scheduler
 from backend.app.core.telemetry.registry import get_registry
+from backend.app.db.models import Request as DBRequest, RequestStatus
 from backend.app.db.session import AsyncSessionLocal
 from backend.app.settings import get_settings
 
@@ -170,4 +172,52 @@ async def cluster_status() -> Dict[str, Any]:
         "fair_share": {
             "total_users": scheduler_stats.get("fair_share", {}).get("total_users", 0),
         },
+    }
+
+
+@router.get("/api/cluster/throughput")
+async def cluster_throughput() -> Dict[str, Any]:
+    """
+    Public endpoint: cluster-wide token throughput.
+
+    Returns tokens/second computed from completed requests in the last 5 seconds.
+    """
+    window_seconds = 5
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=window_seconds)
+
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(
+                    func.coalesce(func.sum(DBRequest.total_tokens), 0),
+                    func.count(DBRequest.id),
+                ).where(
+                    and_(
+                        DBRequest.status == RequestStatus.COMPLETED,
+                        DBRequest.completed_at >= cutoff,
+                    )
+                )
+            )
+            row = result.one()
+            total_tokens = int(row[0])
+            request_count = int(row[1])
+    except Exception:
+        total_tokens = 0
+        request_count = 0
+
+    tokens_per_second = round(total_tokens / window_seconds, 1)
+
+    # Get active request count from scheduler
+    try:
+        scheduler = get_scheduler()
+        stats = await scheduler.get_stats()
+        active_requests = stats.get("queue", {}).get("total", 0)
+    except Exception:
+        active_requests = 0
+
+    return {
+        "tokens_per_second": tokens_per_second,
+        "requests_per_minute": request_count,
+        "active_requests": active_requests,
+        "total_tokens_last_5s": total_tokens,
     }

@@ -246,7 +246,7 @@ class OllamaOutTranslator:
                         )
 
                     yield CanonicalStreamChunk(
-                        id=request_id,
+                        id=request_id or f"chatcmpl-{int(time.time())}",
                         created=int(time.time()),
                         model=model,
                         choices=[choice],

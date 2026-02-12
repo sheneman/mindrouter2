@@ -33,6 +33,7 @@ from sqlalchemy import (
     Text,
     func,
 )
+from sqlalchemy.dialects.mysql import MEDIUMTEXT
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.db.base import Base, TimestampMixin, SoftDeleteMixin
@@ -698,7 +699,7 @@ class ChatAttachment(Base, TimestampMixin):
     content_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     is_image: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     storage_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    thumbnail_base64: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    thumbnail_base64: Mapped[Optional[str]] = mapped_column(MEDIUMTEXT, nullable=True)
     extracted_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     file_size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
