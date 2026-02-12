@@ -1,4 +1,4 @@
-.PHONY: help dev test test-unit test-integration test-e2e lint format migrate seed docker-up docker-down clean
+.PHONY: help dev test test-unit test-int test-e2e test-smoke test-stress test-a11y test-sidecar test-all lint format migrate seed docker-up docker-down clean
 
 # Default target
 help:
@@ -11,10 +11,15 @@ help:
 	@echo "  make install-dev   - Install dev dependencies"
 	@echo ""
 	@echo "Testing:"
-	@echo "  make test          - Run all tests"
+	@echo "  make test          - Run pytest suite (unit + integration)"
 	@echo "  make test-unit     - Run unit tests only"
-	@echo "  make test-int      - Run integration tests"
-	@echo "  make test-e2e      - Run end-to-end tests"
+	@echo "  make test-int      - Run integration tests (live backends)"
+	@echo "  make test-e2e      - Run end-to-end chat tests (live stack)"
+	@echo "  make test-smoke    - Run API smoke tests (live stack)"
+	@echo "  make test-stress   - Run stress/load test (120s, live stack)"
+	@echo "  make test-a11y     - Run accessibility tests (WCAG 2.1)"
+	@echo "  make test-sidecar  - Run GPU sidecar tests"
+	@echo "  make test-all      - Run unit + integration + sidecar tests"
 	@echo "  make coverage      - Run tests with coverage report"
 	@echo ""
 	@echo "Code Quality:"
@@ -60,6 +65,25 @@ test-int:
 
 test-e2e:
 	pytest backend/app/tests/e2e -v
+
+test-smoke:
+	@echo "Running API smoke tests against live deployment..."
+	python test.py --api-key $(API_KEY) --base-url $(or $(BASE_URL),http://localhost:8000) --admin-key $(or $(ADMIN_KEY),$(API_KEY)) --timeout 180
+
+test-stress:
+	@echo "Running stress test (120s)..."
+	python stress.py --api-key $(API_KEY) --base-url $(or $(BASE_URL),http://localhost:8000) --duration $(or $(DURATION),120) --concurrency $(or $(CONCURRENCY),10)
+
+test-a11y:
+	pytest backend/app/tests/unit/test_accessibility.py -v
+
+test-sidecar:
+	pytest sidecar/tests/ -v
+
+test-all:
+	@echo "Running all automated tests..."
+	pytest backend/app/tests -v
+	pytest sidecar/tests/ -v
 
 coverage:
 	pytest backend/app/tests --cov=backend/app --cov-report=html --cov-report=term-missing
