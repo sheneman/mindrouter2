@@ -27,7 +27,7 @@
         <!-- Sidebar -->
         <div class="col-md-2 sidebar bg-light py-3">
             <h6 class="px-3 text-muted">Admin Menu</h6>
-            <ul class="nav flex-column">
+            <ul class="nav flex-column" aria-label="Admin navigation">
                 <li class="nav-item">
                     <a class="nav-link" href="/admin"><i class="bi bi-speedometer2"></i> Overview</a>
                 </li>
@@ -38,7 +38,7 @@
                     <a class="nav-link" href="/admin/nodes"><i class="bi bi-hdd-rack"></i> Nodes</a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link active" href="/admin/metrics"><i class="bi bi-gpu-card"></i> GPU Metrics</a>
+                    <a class="nav-link active" href="/admin/metrics" aria-current="page"><i class="bi bi-gpu-card"></i> GPU Metrics</a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link" href="/admin/users"><i class="bi bi-people"></i> Users</a>
@@ -116,7 +116,7 @@
 
             <!-- Time Range Selector -->
             <div class="mb-3">
-                <div class="btn-group" role="group">
+                <div class="btn-group" role="group" aria-label="Time range selection">
                     <button type="button" class="btn btn-sm btn-outline-primary time-btn active" data-range="1h">1h</button>
                     <button type="button" class="btn btn-sm btn-outline-primary time-btn" data-range="6h">6h</button>
                     <button type="button" class="btn btn-sm btn-outline-primary time-btn" data-range="24h">24h</button>
@@ -134,7 +134,7 @@
                         <div class="card-header"><i class="bi bi-graph-up"></i> GPU Utilization</div>
                         <div class="card-body">
                             <div class="chart-container">
-                                <canvas id="chart-gpu-util"></canvas>
+                                <canvas id="chart-gpu-util" aria-label="GPU utilization over time chart" role="img"></canvas>
                             </div>
                         </div>
                     </div>
@@ -144,7 +144,7 @@
                         <div class="card-header"><i class="bi bi-memory"></i> GPU Memory Usage</div>
                         <div class="card-body">
                             <div class="chart-container">
-                                <canvas id="chart-gpu-mem"></canvas>
+                                <canvas id="chart-gpu-mem" aria-label="GPU memory usage over time chart" role="img"></canvas>
                             </div>
                         </div>
                     </div>
@@ -154,7 +154,7 @@
                         <div class="card-header"><i class="bi bi-lightning"></i> Power Consumption</div>
                         <div class="card-body">
                             <div class="chart-container">
-                                <canvas id="chart-power"></canvas>
+                                <canvas id="chart-power" aria-label="Power consumption over time chart" role="img"></canvas>
                             </div>
                         </div>
                     </div>
@@ -164,7 +164,7 @@
                         <div class="card-header"><i class="bi bi-activity"></i> Request Throughput</div>
                         <div class="card-body">
                             <div class="chart-container">
-                                <canvas id="chart-requests"></canvas>
+                                <canvas id="chart-requests" aria-label="Request throughput over time chart" role="img"></canvas>
                             </div>
                         </div>
                     </div>
@@ -174,7 +174,7 @@
             <!-- View Toggle -->
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h4 class="mb-0"><i class="bi bi-server"></i> Details</h4>
-                <div class="btn-group" role="group">
+                <div class="btn-group" role="group" aria-label="Detail view selection">
                     <button type="button" class="btn btn-sm btn-outline-primary view-btn active" data-view="node">
                         <i class="bi bi-hdd-rack"></i> Node View
                     </button>

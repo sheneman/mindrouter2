@@ -531,24 +531,25 @@
 {% block content %}
 <div class="chat-layout">
     <!-- Sidebar -->
-    <div class="chat-sidebar" id="chatSidebar">
+    <nav class="chat-sidebar" id="chatSidebar" aria-label="Chat conversations">
         <div class="sidebar-header">
             <button class="btn btn-primary btn-sm" id="newChatBtn">
-                <i class="bi bi-plus-lg"></i> New Chat
+                <i class="bi bi-plus-lg" aria-hidden="true"></i> New Chat
             </button>
         </div>
-        <div class="conversation-list" id="conversationList">
+        <div class="conversation-list" id="conversationList" role="list" aria-label="Conversation history">
             <!-- Populated by JS -->
         </div>
-    </div>
+    </nav>
 
     <!-- Main -->
     <div class="chat-main" id="chatMain">
         <div class="chat-header">
-            <button class="toggle-sidebar" id="toggleSidebar" title="Toggle sidebar">
-                <i class="bi bi-layout-sidebar"></i>
+            <button class="toggle-sidebar" id="toggleSidebar" title="Toggle sidebar" aria-label="Toggle conversation sidebar" aria-expanded="true">
+                <i class="bi bi-layout-sidebar" aria-hidden="true"></i>
             </button>
-            <select class="form-select form-select-sm" id="modelSelect">
+            <label for="modelSelect" class="sr-only">Select AI model</label>
+            <select class="form-select form-select-sm" id="modelSelect" aria-label="Select AI model">
                 <option value="">Loading models...</option>
             </select>
         </div>
@@ -563,10 +564,10 @@
         </div>
         {% else %}
         <!-- Messages area -->
-        <div class="chat-messages" id="chatMessages">
+        <div class="chat-messages" id="chatMessages" role="log" aria-label="Chat messages" aria-live="polite">
             <div class="welcome-screen" id="welcomeScreen">
                 <div class="welcome-content">
-                    <h2><i class="bi bi-chat-dots"></i></h2>
+                    <div><i class="bi bi-chat-dots" aria-hidden="true" style="font-size:2rem;"></i></div>
                     <h2>MindRouter Chat</h2>
                     <p>Select a model and start chatting. You can attach files for context or images for vision models.</p>
                 </div>
@@ -583,17 +584,19 @@
                 <div class="chat-input-row">
                     <input type="file" id="fileInput" multiple style="display: none;"
                            accept=".txt,.md,.csv,.json,.html,.htm,.docx,.xlsx,.pdf,.jpg,.jpeg,.png,.gif,.webp,.log">
-                    <button class="btn btn-outline-secondary" id="attachBtn" title="Attach file">
-                        <i class="bi bi-paperclip"></i>
+                    <button class="btn btn-outline-secondary" id="attachBtn" title="Attach file" aria-label="Attach file">
+                        <i class="bi bi-paperclip" aria-hidden="true"></i>
                     </button>
+                    <label for="chatInput" class="sr-only">Chat message</label>
                     <textarea id="chatInput" rows="1"
-                              placeholder="Type a message..."
+                              placeholder="Type a message... (Shift+Enter for new line)"
+                              aria-label="Chat message"
                               autofocus></textarea>
-                    <button class="btn btn-primary" id="sendBtn" title="Send message">
-                        <i class="bi bi-send"></i>
+                    <button class="btn btn-primary" id="sendBtn" title="Send message" aria-label="Send message">
+                        <i class="bi bi-send" aria-hidden="true"></i>
                     </button>
-                    <button class="btn btn-danger stop-btn" id="stopBtn" title="Stop generation">
-                        <i class="bi bi-stop-fill"></i>
+                    <button class="btn btn-danger stop-btn" id="stopBtn" title="Stop generation" aria-label="Stop generation">
+                        <i class="bi bi-stop-fill" aria-hidden="true"></i>
                     </button>
                 </div>
             </div>
@@ -627,10 +630,10 @@
 </div>
 
 <!-- Image modal -->
-<div class="image-modal-backdrop" id="imageModal">
+<div class="image-modal-backdrop" id="imageModal" role="dialog" aria-modal="true" aria-label="Image preview">
     <div class="image-modal-content">
-        <button class="image-modal-close" id="imageModalClose">&times;</button>
-        <img id="imageModalImg" src="" alt="">
+        <button class="image-modal-close" id="imageModalClose" aria-label="Close image preview">&times;</button>
+        <img id="imageModalImg" src="" alt="Full-size preview">
         <div class="image-modal-filename" id="imageModalFilename"></div>
     </div>
 </div>
@@ -843,12 +846,15 @@
         conversations.forEach(conv => {
             const div = document.createElement('div');
             div.className = 'conv-item' + (conv.id === activeConvId ? ' active' : '');
+            div.setAttribute('role', 'listitem');
             div.innerHTML = `
-                <i class="bi bi-chat"></i>
-                <span class="conv-title">${escapeHtml(conv.title)}</span>
-                <button class="conv-delete" title="Delete"><i class="bi bi-trash"></i></button>
+                <i class="bi bi-chat" aria-hidden="true"></i>
+                <span class="conv-title" role="button" tabindex="0">${escapeHtml(conv.title)}</span>
+                <button class="conv-delete" title="Delete conversation" aria-label="Delete conversation: ${escapeHtml(conv.title)}"><i class="bi bi-trash" aria-hidden="true"></i></button>
             `;
-            div.querySelector('.conv-title').addEventListener('click', () => switchConversation(conv.id));
+            const titleEl = div.querySelector('.conv-title');
+            titleEl.addEventListener('click', () => switchConversation(conv.id));
+            titleEl.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); switchConversation(conv.id); } });
             div.querySelector('i.bi-chat').addEventListener('click', () => switchConversation(conv.id));
             div.querySelector('.conv-delete').addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -1102,15 +1108,26 @@
     const imageModalFilename = document.getElementById('imageModalFilename');
     const imageModalClose = document.getElementById('imageModalClose');
 
-    function openImageModal(src, filename) {
+    let imageModalTrigger = null; // Track the element that opened the modal
+
+    function openImageModal(src, filename, triggerEl) {
+        imageModalTrigger = triggerEl || document.activeElement;
         imageModalImg.src = src;
+        imageModalImg.alt = filename ? 'Full-size preview of ' + filename : 'Full-size image preview';
         imageModalFilename.textContent = filename || '';
         imageModal.classList.add('active');
+        // Move focus into the modal
+        imageModalClose.focus();
     }
 
     function closeImageModal() {
         imageModal.classList.remove('active');
         imageModalImg.src = '';
+        // Return focus to trigger element
+        if (imageModalTrigger && imageModalTrigger.focus) {
+            imageModalTrigger.focus();
+        }
+        imageModalTrigger = null;
     }
 
     if (imageModal) {
@@ -1121,6 +1138,11 @@
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && imageModal.classList.contains('active')) {
                 closeImageModal();
+            }
+            // Simple focus trap: Tab within modal cycles between close button and image
+            if (e.key === 'Tab' && imageModal.classList.contains('active')) {
+                e.preventDefault();
+                imageModalClose.focus();
             }
         });
     }
@@ -1490,6 +1512,8 @@
 
     toggleBtn.addEventListener('click', () => {
         sidebar.classList.toggle('collapsed');
+        const expanded = !sidebar.classList.contains('collapsed');
+        toggleBtn.setAttribute('aria-expanded', String(expanded));
     });
 
     newChatBtn.addEventListener('click', () => {

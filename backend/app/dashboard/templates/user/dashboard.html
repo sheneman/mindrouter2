@@ -15,24 +15,24 @@
         <div class="col-md-4 mb-3">
             <div class="card card-stat primary h-100">
                 <div class="card-body">
-                    <h6 class="card-subtitle mb-2 text-muted">Role</h6>
-                    <h3 class="card-title mb-0">
+                    <h2 class="card-subtitle mb-2 text-muted h6">Role</h2>
+                    <p class="card-title h3 mb-0">
                         <span class="badge bg-primary">{{ user.role.value|title }}</span>
-                    </h3>
+                    </p>
                 </div>
             </div>
         </div>
         <div class="col-md-4 mb-3">
             <div class="card card-stat {% if usage_percent >= 90 %}danger{% elif usage_percent >= 70 %}warning{% else %}success{% endif %} h-100">
                 <div class="card-body">
-                    <h6 class="card-subtitle mb-2 text-muted">Token Usage</h6>
+                    <h2 class="card-subtitle mb-2 text-muted h6">Token Usage</h2>
                     {% if quota %}
-                    <h3 class="card-title mb-1">{{ "{:,}".format(quota.tokens_used) }} / {{ "{:,}".format(quota.token_budget) }}</h3>
+                    <p class="card-title h3 mb-1">{{ "{:,}".format(quota.tokens_used) }} / {{ "{:,}".format(quota.token_budget) }}</p>
                     <div class="progress" style="height: 6px;">
-                        <div class="progress-bar {% if usage_percent >= 90 %}bg-danger{% elif usage_percent >= 70 %}bg-warning{% else %}bg-success{% endif %}" role="progressbar" style="width: {{ usage_percent }}%"></div>
+                        <div class="progress-bar {% if usage_percent >= 90 %}bg-danger{% elif usage_percent >= 70 %}bg-warning{% else %}bg-success{% endif %}" role="progressbar" style="width: {{ usage_percent }}%" aria-valuenow="{{ usage_percent }}" aria-valuemin="0" aria-valuemax="100" aria-label="Token usage"></div>
                     </div>
                     {% else %}
-                    <h3 class="card-title mb-0 text-muted">No quota set</h3>
+                    <p class="card-title h3 mb-0 text-muted">No quota set</p>
                     {% endif %}
                 </div>
             </div>
@@ -40,8 +40,8 @@
         <div class="col-md-4 mb-3">
             <div class="card card-stat primary h-100">
                 <div class="card-body">
-                    <h6 class="card-subtitle mb-2 text-muted">Active API Keys</h6>
-                    <h3 class="card-title mb-0">{{ api_keys|selectattr('status.value', 'equalto', 'active')|list|length }}</h3>
+                    <h2 class="card-subtitle mb-2 text-muted h6">Active API Keys</h2>
+                    <p class="card-title h3 mb-0">{{ api_keys|selectattr('status.value', 'equalto', 'active')|list|length }}</p>
                 </div>
             </div>
         </div>
@@ -60,13 +60,14 @@
                     {% if api_keys %}
                     <div class="table-responsive">
                         <table class="table table-hover">
+                            <caption class="sr-only">API keys</caption>
                             <thead>
                                 <tr>
-                                    <th>Name</th>
-                                    <th>Key Prefix</th>
-                                    <th>Status</th>
-                                    <th>Last Used</th>
-                                    <th>Actions</th>
+                                    <th scope="col">Name</th>
+                                    <th scope="col">Key Prefix</th>
+                                    <th scope="col">Status</th>
+                                    <th scope="col">Last Used</th>
+                                    <th scope="col">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -131,11 +132,11 @@
 </div>
 
 <!-- Create Key Modal -->
-<div class="modal fade" id="createKeyModal" tabindex="-1">
+<div class="modal fade" id="createKeyModal" tabindex="-1" aria-labelledby="createKeyModalLabel">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Create New API Key</h5>
+                <h5 class="modal-title" id="createKeyModalLabel">Create New API Key</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <form method="POST" action="/dashboard/create-key">

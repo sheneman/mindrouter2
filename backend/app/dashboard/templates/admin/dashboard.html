@@ -8,9 +8,9 @@
         <!-- Sidebar -->
         <div class="col-md-2 sidebar bg-light py-3">
             <h6 class="px-3 text-muted">Admin Menu</h6>
-            <ul class="nav flex-column">
+            <ul class="nav flex-column" role="navigation" aria-label="Admin navigation">
                 <li class="nav-item">
-                    <a class="nav-link active" href="/admin">
+                    <a class="nav-link active" href="/admin" aria-current="page">
                         <i class="bi bi-speedometer2"></i> Overview
                     </a>
                 </li>
@@ -58,32 +58,32 @@
                 <div class="col-md-3 mb-3">
                     <div class="card card-stat success h-100">
                         <div class="card-body">
-                            <h6 class="card-subtitle mb-2 text-muted">Healthy Backends</h6>
-                            <h2 class="card-title mb-0">{{ backends|selectattr('status.value', 'equalto', 'healthy')|list|length }} / {{ backends|length }}</h2>
+                            <h2 class="card-subtitle h6 mb-2 text-muted">Healthy Backends</h2>
+                            <p class="card-title h2 mb-0">{{ backends|selectattr('status.value', 'equalto', 'healthy')|list|length }} / {{ backends|length }}</p>
                         </div>
                     </div>
                 </div>
                 <div class="col-md-3 mb-3">
                     <div class="card card-stat warning h-100">
                         <div class="card-body">
-                            <h6 class="card-subtitle mb-2 text-muted">Queue Size</h6>
-                            <h2 class="card-title mb-0">{{ scheduler_stats.queue.total if scheduler_stats else 0 }}</h2>
+                            <h2 class="card-subtitle h6 mb-2 text-muted">Queue Size</h2>
+                            <p class="card-title h2 mb-0">{{ scheduler_stats.queue.total if scheduler_stats else 0 }}</p>
                         </div>
                     </div>
                 </div>
                 <div class="col-md-3 mb-3">
                     <div class="card card-stat primary h-100">
                         <div class="card-body">
-                            <h6 class="card-subtitle mb-2 text-muted">Active Users</h6>
-                            <h2 class="card-title mb-0">{{ scheduler_stats.fair_share.total_users if scheduler_stats else 0 }}</h2>
+                            <h2 class="card-subtitle h6 mb-2 text-muted">Active Users</h2>
+                            <p class="card-title h2 mb-0">{{ scheduler_stats.fair_share.total_users if scheduler_stats else 0 }}</p>
                         </div>
                     </div>
                 </div>
                 <div class="col-md-3 mb-3">
                     <div class="card card-stat danger h-100">
                         <div class="card-body">
-                            <h6 class="card-subtitle mb-2 text-muted">Pending Requests</h6>
-                            <h2 class="card-title mb-0">{{ pending_requests|length }}</h2>
+                            <h2 class="card-subtitle h6 mb-2 text-muted">Pending Requests</h2>
+                            <p class="card-title h2 mb-0">{{ pending_requests|length }}</p>
                         </div>
                     </div>
                 </div>
@@ -98,13 +98,14 @@
                         <div class="card-body">
                             <div class="table-responsive">
                                 <table class="table table-hover">
+                                    <caption class="sr-only">Backend status overview</caption>
                                     <thead>
                                         <tr>
-                                            <th>Name</th>
-                                            <th>Engine</th>
-                                            <th>Status</th>
-                                            <th>Concurrent</th>
-                                            <th>Last Check</th>
+                                            <th scope="col">Name</th>
+                                            <th scope="col">Engine</th>
+                                            <th scope="col">Status</th>
+                                            <th scope="col">Concurrent</th>
+                                            <th scope="col">Last Check</th>
                                         </tr>
                                     </thead>
                                     <tbody>

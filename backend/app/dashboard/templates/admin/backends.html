@@ -8,12 +8,12 @@
         <!-- Sidebar -->
         <div class="col-md-2 sidebar bg-light py-3">
             <h6 class="px-3 text-muted">Admin Menu</h6>
-            <ul class="nav flex-column">
+            <ul class="nav flex-column" aria-label="Admin navigation">
                 <li class="nav-item">
                     <a class="nav-link" href="/admin"><i class="bi bi-speedometer2"></i> Overview</a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link active" href="/admin/backends"><i class="bi bi-server"></i> Backends</a>
+                    <a class="nav-link active" href="/admin/backends" aria-current="page"><i class="bi bi-server"></i> Backends</a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link" href="/admin/nodes"><i class="bi bi-hdd-rack"></i> Nodes</a>
@@ -66,18 +66,18 @@
                     <form method="POST" action="/admin/backends/register">
                         <div class="row">
                             <div class="col-md-4 mb-3">
-                                <label for="name" class="form-label">Name</label>
-                                <input type="text" class="form-control" id="name" name="name" required
+                                <label for="reg_name" class="form-label">Name</label>
+                                <input type="text" class="form-control" id="reg_name" name="name" required
                                        placeholder="e.g., gpu-server-1">
                             </div>
                             <div class="col-md-4 mb-3">
-                                <label for="url" class="form-label">URL</label>
-                                <input type="text" class="form-control" id="url" name="url" required
+                                <label for="reg_url" class="form-label">URL</label>
+                                <input type="text" class="form-control" id="reg_url" name="url" required
                                        placeholder="http://host:port">
                             </div>
                             <div class="col-md-4 mb-3">
-                                <label for="engine" class="form-label">Engine</label>
-                                <select class="form-select" id="engine" name="engine" required>
+                                <label for="reg_engine" class="form-label">Engine</label>
+                                <select class="form-select" id="reg_engine" name="engine" required>
                                     <option value="ollama">Ollama</option>
                                     <option value="vllm">vLLM</option>
                                 </select>
@@ -85,25 +85,25 @@
                         </div>
                         <div class="row">
                             <div class="col-md-3 mb-3">
-                                <label for="max_concurrent" class="form-label">Max Concurrent</label>
-                                <input type="number" class="form-control" id="max_concurrent" name="max_concurrent"
+                                <label for="reg_max_concurrent" class="form-label">Max Concurrent</label>
+                                <input type="number" class="form-control" id="reg_max_concurrent" name="max_concurrent"
                                        value="4" min="1">
                             </div>
                             <div class="col-md-3 mb-3">
-                                <label for="gpu_memory_gb" class="form-label">GPU Memory (GB)</label>
-                                <input type="number" class="form-control" id="gpu_memory_gb" name="gpu_memory_gb"
+                                <label for="reg_gpu_memory_gb" class="form-label">GPU Memory (GB)</label>
+                                <input type="number" class="form-control" id="reg_gpu_memory_gb" name="gpu_memory_gb"
                                        step="0.1" placeholder="Optional">
                             </div>
                             <div class="col-md-3 mb-3">
-                                <label for="gpu_type" class="form-label">GPU Type</label>
-                                <input type="text" class="form-control" id="gpu_type" name="gpu_type"
+                                <label for="reg_gpu_type" class="form-label">GPU Type</label>
+                                <input type="text" class="form-control" id="reg_gpu_type" name="gpu_type"
                                        placeholder="e.g., NVIDIA A100">
                             </div>
                         </div>
                         <div class="row">
                             <div class="col-md-4 mb-3">
-                                <label for="node_id" class="form-label">Node</label>
-                                <select class="form-select" id="node_id" name="node_id">
+                                <label for="reg_node_id" class="form-label">Node</label>
+                                <select class="form-select" id="reg_node_id" name="node_id">
                                     <option value="">None (standalone)</option>
                                     {% if nodes %}
                                     {% for node in nodes %}
@@ -113,8 +113,8 @@
                                 </select>
                             </div>
                             <div class="col-md-4 mb-3">
-                                <label for="gpu_indices" class="form-label">GPU Indices</label>
-                                <input type="text" class="form-control" id="gpu_indices" name="gpu_indices"
+                                <label for="reg_gpu_indices" class="form-label">GPU Indices</label>
+                                <input type="text" class="form-control" id="reg_gpu_indices" name="gpu_indices"
                                        placeholder="e.g., 0,1,2 (blank = all)">
                                 <div class="form-text">Comma-separated GPU indices, or leave blank for all GPUs on the node.</div>
                             </div>

@@ -7,14 +7,14 @@
     <div class="row">
         <div class="col-md-2 sidebar bg-light py-3">
             <h6 class="px-3 text-muted">Admin Menu</h6>
-            <ul class="nav flex-column">
+            <ul class="nav flex-column" aria-label="Admin navigation">
                 <li class="nav-item"><a class="nav-link" href="/admin"><i class="bi bi-speedometer2"></i> Overview</a></li>
                 <li class="nav-item"><a class="nav-link" href="/admin/backends"><i class="bi bi-server"></i> Backends</a></li>
                 <li class="nav-item"><a class="nav-link" href="/admin/nodes"><i class="bi bi-hdd-rack"></i> Nodes</a></li>
                 <li class="nav-item"><a class="nav-link" href="/admin/metrics"><i class="bi bi-gpu-card"></i> GPU Metrics</a></li>
                 <li class="nav-item"><a class="nav-link" href="/admin/users"><i class="bi bi-people"></i> Users</a></li>
                 <li class="nav-item"><a class="nav-link" href="/admin/requests"><i class="bi bi-inbox"></i> Requests</a></li>
-                <li class="nav-item"><a class="nav-link active" href="/admin/audit"><i class="bi bi-journal-text"></i> Audit Log</a></li>
+                <li class="nav-item"><a class="nav-link active" href="/admin/audit" aria-current="page"><i class="bi bi-journal-text"></i> Audit Log</a></li>
             </ul>
         </div>
 
@@ -26,16 +26,17 @@
                 <div class="card-body">
                     <div class="table-responsive">
                         <table class="table table-hover table-sm">
+                            <caption class="sr-only">Inference request audit log</caption>
                             <thead>
                                 <tr>
-                                    <th>ID</th>
-                                    <th>Time</th>
-                                    <th>User</th>
-                                    <th>Model</th>
-                                    <th>Endpoint</th>
-                                    <th>Status</th>
-                                    <th>Tokens</th>
-                                    <th>Latency</th>
+                                    <th scope="col">ID</th>
+                                    <th scope="col">Time</th>
+                                    <th scope="col">User</th>
+                                    <th scope="col">Model</th>
+                                    <th scope="col">Endpoint</th>
+                                    <th scope="col">Status</th>
+                                    <th scope="col">Tokens</th>
+                                    <th scope="col">Latency</th>
                                 </tr>
                             </thead>
                             <tbody>
