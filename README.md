@@ -2,6 +2,12 @@
 
 A production-ready **LLM inference load balancer** that fronts a heterogeneous backend cluster of **Ollama** and **vLLM** inference nodes, providing a unified OpenAI-compatible API surface with native Ollama compatibility.
 
+## Documentation
+
+For comprehensive documentation covering the full application, API reference, configuration, and more, see **[docs/index.md](docs/index.md)**.
+
+Interactive API docs are also available at `/docs` (Swagger UI) and `/redoc` (ReDoc) when the application is running.
+
 ## Features
 
 - **Unified API Gateway**: OpenAI-compatible `/v1/*` endpoints + Ollama `/api/*` passthrough
