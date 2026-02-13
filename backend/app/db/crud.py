@@ -316,7 +316,7 @@ async def get_api_key_by_prefix(db: AsyncSession, key_prefix: str) -> Optional[A
     """Get API key by prefix (for identification)."""
     result = await db.execute(
         select(ApiKey)
-        .options(selectinload(ApiKey.user))
+        .options(selectinload(ApiKey.user).selectinload(User.group))
         .where(ApiKey.key_prefix == key_prefix)
     )
     return result.scalar_one_or_none()
