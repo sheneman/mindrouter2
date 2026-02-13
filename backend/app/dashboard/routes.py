@@ -14,18 +14,21 @@
 
 """Dashboard routes for MindRouter2."""
 
+import csv
+import io
+import json
 import os
 from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.scheduler.policy import get_scheduler
 from backend.app.core.telemetry.registry import get_registry
-from backend.app.db import crud
+from backend.app.db import crud, chat_crud
 from backend.app.db.models import BackendEngine, QuotaRequestStatus, UserRole
 from backend.app.db.session import get_async_db
 from backend.app.security import generate_api_key, hash_password, verify_password
@@ -101,6 +104,12 @@ async def public_dashboard(
     except Exception:
         queue_size = 0
 
+    # Look up user for navbar rendering
+    user_id = get_session_user_id(request)
+    user = None
+    if user_id:
+        user = await crud.get_user_by_id(db, user_id)
+
     return templates.TemplateResponse(
         "public/index.html",
         {
@@ -110,7 +119,8 @@ async def public_dashboard(
             "healthy_backends": len(healthy_backends),
             "models": sorted(models),
             "queue_size": queue_size,
-            "user_id": get_session_user_id(request),
+            "user": user,
+            "user_id": user_id,
         },
     )
 
@@ -956,9 +966,16 @@ async def admin_metrics(
 @dashboard_router.get("/admin/audit", response_class=HTMLResponse)
 async def admin_audit(
     request: Request,
+    search: Optional[str] = None,
+    user_id_filter: Optional[int] = None,
+    model_filter: Optional[str] = None,
+    status_filter: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    page: int = 1,
     db: AsyncSession = Depends(get_async_db),
 ):
-    """Admin audit log viewer."""
+    """Admin audit log viewer with filters and pagination."""
     user_id = get_session_user_id(request)
     if not user_id:
         return RedirectResponse(url="/login", status_code=302)
@@ -967,13 +984,100 @@ async def admin_audit(
     if not user or (not user.group or not user.group.is_admin):
         return RedirectResponse(url="/dashboard", status_code=302)
 
-    # Get recent requests
-    requests, total = await crud.search_requests(db, limit=100)
+    from backend.app.db.models import RequestStatus
+
+    per_page = 50
+    skip = (page - 1) * per_page
+
+    # Parse filters
+    parsed_status = None
+    if status_filter:
+        try:
+            parsed_status = RequestStatus(status_filter)
+        except ValueError:
+            pass
+    parsed_start = None
+    parsed_end = None
+    if start_date:
+        try:
+            parsed_start = datetime.fromisoformat(start_date)
+        except ValueError:
+            pass
+    if end_date:
+        try:
+            parsed_end = datetime.fromisoformat(end_date)
+        except ValueError:
+            pass
+
+    audit_requests, total = await crud.search_requests(
+        db,
+        user_id=user_id_filter,
+        model=model_filter,
+        status=parsed_status,
+        start_date=parsed_start,
+        end_date=parsed_end,
+        search_text=search,
+        skip=skip,
+        limit=per_page,
+    )
+    total_pages = max(1, (total + per_page - 1) // per_page)
 
     return templates.TemplateResponse(
         "admin/audit.html",
-        {"request": request, "user": user, "audit_requests": requests, "total": total},
+        {
+            "request": request,
+            "user": user,
+            "audit_requests": audit_requests,
+            "total": total,
+            "page": page,
+            "total_pages": total_pages,
+            "search": search or "",
+            "user_id_filter": user_id_filter or "",
+            "model_filter": model_filter or "",
+            "status_filter": status_filter or "",
+            "start_date": start_date or "",
+            "end_date": end_date or "",
+        },
     )
+
+
+@dashboard_router.get("/admin/audit/{request_uuid}/detail")
+async def admin_audit_detail(
+    request: Request,
+    request_uuid: str,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Get request detail with prompt/response content (JSON API for AJAX expand)."""
+    session_user_id = get_session_user_id(request)
+    if not session_user_id:
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+
+    user = await crud.get_user_by_id(db, session_user_id)
+    if not user or (not user.group or not user.group.is_admin):
+        return JSONResponse({"error": "Forbidden"}, status_code=403)
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from backend.app.db.models import Request as RequestModel
+
+    result = await db.execute(
+        select(RequestModel)
+        .where(RequestModel.request_uuid == request_uuid)
+        .options(selectinload(RequestModel.response))
+    )
+    req = result.scalar_one_or_none()
+    if not req:
+        return JSONResponse({"error": "Request not found"}, status_code=404)
+
+    detail = {
+        "messages": req.messages,
+        "prompt": req.prompt,
+        "parameters": req.parameters,
+        "response_content": req.response.content if req.response else None,
+        "finish_reason": req.response.finish_reason if req.response else None,
+        "error_message": req.error_message,
+    }
+    return JSONResponse(detail)
 
 
 # Group management routes
@@ -1247,4 +1351,216 @@ async def admin_api_keys(
             "search": search or "",
             "key_status": key_status or "",
         },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Admin Conversation Viewer
+# ---------------------------------------------------------------------------
+
+@dashboard_router.get("/admin/conversations", response_class=HTMLResponse)
+async def admin_conversations(
+    request: Request,
+    search: Optional[str] = None,
+    user_id_filter: Optional[int] = None,
+    model_filter: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    page: int = 1,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Admin conversation list with search, filter, and pagination."""
+    session_user_id = get_session_user_id(request)
+    if not session_user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, session_user_id)
+    if not user or (not user.group or not user.group.is_admin):
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    per_page = 50
+    skip = (page - 1) * per_page
+
+    # Parse dates
+    parsed_start = None
+    parsed_end = None
+    if start_date:
+        try:
+            parsed_start = datetime.fromisoformat(start_date)
+        except ValueError:
+            pass
+    if end_date:
+        try:
+            parsed_end = datetime.fromisoformat(end_date)
+        except ValueError:
+            pass
+
+    conversations, total = await chat_crud.search_conversations_admin(
+        db,
+        user_id=user_id_filter,
+        model=model_filter,
+        search_text=search,
+        start_date=parsed_start,
+        end_date=parsed_end,
+        skip=skip,
+        limit=per_page,
+    )
+    total_pages = max(1, (total + per_page - 1) // per_page)
+
+    return templates.TemplateResponse(
+        "admin/conversations.html",
+        {
+            "request": request,
+            "user": user,
+            "conversations": conversations,
+            "total": total,
+            "page": page,
+            "total_pages": total_pages,
+            "search": search or "",
+            "user_id_filter": user_id_filter or "",
+            "model_filter": model_filter or "",
+            "start_date": start_date or "",
+            "end_date": end_date or "",
+        },
+    )
+
+
+@dashboard_router.get("/admin/conversations/{conversation_id}/messages")
+async def admin_conversation_messages(
+    request: Request,
+    conversation_id: int,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Get conversation messages (JSON API for AJAX expand/reveal)."""
+    session_user_id = get_session_user_id(request)
+    if not session_user_id:
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+
+    user = await crud.get_user_by_id(db, session_user_id)
+    if not user or (not user.group or not user.group.is_admin):
+        return JSONResponse({"error": "Forbidden"}, status_code=403)
+
+    messages = await chat_crud.get_conversation_messages_admin(db, conversation_id)
+    if messages is None:
+        return JSONResponse({"error": "Conversation not found"}, status_code=404)
+
+    return JSONResponse({"messages": messages})
+
+
+# ---------------------------------------------------------------------------
+# Admin Conversation Export
+# ---------------------------------------------------------------------------
+
+@dashboard_router.get("/admin/conversations/export")
+async def admin_conversations_export(
+    request: Request,
+    format: str = "csv",
+    search: Optional[str] = None,
+    user_id_filter: Optional[int] = None,
+    model_filter: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    include_content: bool = False,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Export conversations as CSV or JSON."""
+    session_user_id = get_session_user_id(request)
+    if not session_user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, session_user_id)
+    if not user or (not user.group or not user.group.is_admin):
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    # Parse dates
+    parsed_start = None
+    parsed_end = None
+    if start_date:
+        try:
+            parsed_start = datetime.fromisoformat(start_date)
+        except ValueError:
+            pass
+    if end_date:
+        try:
+            parsed_end = datetime.fromisoformat(end_date)
+        except ValueError:
+            pass
+
+    conversations, _ = await chat_crud.search_conversations_admin(
+        db,
+        user_id=user_id_filter,
+        model=model_filter,
+        search_text=search,
+        start_date=parsed_start,
+        end_date=parsed_end,
+        skip=0,
+        limit=10000,
+    )
+
+    # Enrich with messages if requested
+    if include_content:
+        for conv in conversations:
+            msgs = await chat_crud.get_conversation_messages_admin(db, conv["id"])
+            conv["messages"] = msgs or []
+
+    if format == "json":
+        # Serialize datetimes
+        def default_serializer(obj):
+            if isinstance(obj, datetime):
+                return obj.isoformat()
+            return str(obj)
+
+        content = json.dumps(conversations, default=default_serializer, indent=2)
+        return StreamingResponse(
+            io.BytesIO(content.encode()),
+            media_type="application/json",
+            headers={"Content-Disposition": "attachment; filename=conversations.json"},
+        )
+
+    # CSV format
+    output = io.StringIO()
+    fieldnames = ["id", "user_id", "username", "title", "model", "message_count", "created_at", "updated_at"]
+    if include_content:
+        fieldnames.append("messages")
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+    for conv in conversations:
+        row = {k: conv.get(k, "") for k in fieldnames}
+        if "created_at" in row and hasattr(row["created_at"], "isoformat"):
+            row["created_at"] = row["created_at"].isoformat()
+        if "updated_at" in row and hasattr(row["updated_at"], "isoformat"):
+            row["updated_at"] = row["updated_at"].isoformat()
+        if include_content and "messages" in row:
+            row["messages"] = json.dumps(row["messages"], default=str)
+        writer.writerow(row)
+
+    return StreamingResponse(
+        io.BytesIO(output.getvalue().encode()),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=conversations.csv"},
+    )
+
+
+@dashboard_router.get("/api/admin/conversations/export")
+async def api_admin_conversations_export(
+    request: Request,
+    search: Optional[str] = None,
+    user_id_filter: Optional[int] = None,
+    model_filter: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    include_content: bool = True,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Bulk API export endpoint for programmatic access (JSON with content)."""
+    return await admin_conversations_export(
+        request=request,
+        format="json",
+        search=search,
+        user_id_filter=user_id_filter,
+        model_filter=model_filter,
+        start_date=start_date,
+        end_date=end_date,
+        include_content=include_content,
+        db=db,
     )

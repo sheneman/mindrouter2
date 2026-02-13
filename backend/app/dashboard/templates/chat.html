@@ -892,7 +892,7 @@
                 const dataIdx = `data-fidx="${idx}"`;
                 if (f.thumbnail) {
                     filesHtml += `<div class="attached-file-thumb" ${dataIdx}>
-                        <img src="data:image/png;base64,${f.thumbnail}" alt="${escapeHtml(f.filename)}">
+                        <img src="${f.thumbnail}" alt="${escapeHtml(f.filename)}">
                         <div class="thumb-label">${escapeHtml(f.filename)}</div>
                     </div>`;
                 } else {
@@ -923,14 +923,17 @@
         `;
         messagesEl.appendChild(div);
 
-        // Wire up thumbnail click -> modal (thumbnail only, no full-size base64 on client)
+        // Wire up thumbnail click -> modal (load medium-res image from server)
         if (files && files.length) {
             div.querySelectorAll('.attached-file-thumb img').forEach(img => {
                 const idx = parseInt(img.closest('.attached-file-thumb').dataset.fidx);
                 const f = files[idx];
                 if (!f || !f.thumbnail) return;
-                const src = 'data:image/png;base64,' + f.thumbnail;
-                img.addEventListener('click', () => openImageModal(src, f.filename));
+                const attId = f.id || f.attachment_id;
+                const modalSrc = attId
+                    ? `/chat/api/attachments/${attId}/medium`
+                    : 'data:image/png;base64,' + f.thumbnail;
+                img.addEventListener('click', () => openImageModal(modalSrc, f.filename, img));
             });
         }
 
@@ -1304,10 +1307,7 @@
         if (!el) return;
         el.dataset.attachmentId = fileData.attachment_id;
 
-        let imgSrc = null;
-        if (fileData.thumbnail) {
-            imgSrc = 'data:image/png;base64,' + fileData.thumbnail;
-        }
+        let imgSrc = fileData.thumbnail || null;
 
         if (imgSrc) {
             el.innerHTML = `
@@ -1317,7 +1317,10 @@
             `;
             const img = el.querySelector('img');
             img.style.cursor = 'pointer';
-            img.addEventListener('click', () => openImageModal(imgSrc, fileData.filename));
+            const modalSrc = fileData.attachment_id
+                ? `/chat/api/attachments/${fileData.attachment_id}/medium`
+                : imgSrc;
+            img.addEventListener('click', () => openImageModal(modalSrc, fileData.filename, img));
         } else {
             const ext = fileData.filename.split('.').pop().toLowerCase();
             const icon = ext === 'pdf' ? 'bi-file-earmark-pdf'

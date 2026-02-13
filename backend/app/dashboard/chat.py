@@ -22,7 +22,7 @@ import time
 from typing import List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -81,8 +81,18 @@ async def _get_chat_user(
     return user, api_keys[0]
 
 
-def _generate_image_thumbnail(file_bytes: bytes) -> Optional[str]:
-    """Generate a 200px-wide PNG thumbnail from image bytes."""
+def _sharded_path(base_dir: str, attachment_id: int, suffix: str) -> str:
+    """Return a sharded filesystem path: base_dir/<id%1000>/<id><suffix>."""
+    shard = attachment_id % 1000
+    shard_dir = os.path.join(base_dir, str(shard))
+    return os.path.join(shard_dir, f"{attachment_id}{suffix}")
+
+
+def _generate_image_thumbnail(file_bytes: bytes) -> Optional[bytes]:
+    """Generate a 200px-wide PNG thumbnail from image bytes.
+
+    Returns raw PNG bytes (not base64).
+    """
     from PIL import Image
 
     img = Image.open(io.BytesIO(file_bytes))
@@ -94,11 +104,34 @@ def _generate_image_thumbnail(file_bytes: bytes) -> Optional[str]:
         img = img.resize((200, max(new_h, 1)), Image.LANCZOS)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
-    return base64.b64encode(buf.getvalue()).decode("utf-8")
+    return buf.getvalue()
 
 
-def _generate_pdf_thumbnail(file_bytes: bytes) -> Optional[str]:
-    """Generate a 200px-wide PNG thumbnail of the first page of a PDF."""
+def _generate_medium_thumbnail(file_bytes: bytes) -> bytes:
+    """Generate an 800px-wide JPEG medium thumbnail from image bytes.
+
+    Returns raw JPEG bytes.  If the image is already <= 800px wide,
+    return a JPEG-compressed copy at the original size (no upscaling).
+    """
+    from PIL import Image
+
+    img = Image.open(io.BytesIO(file_bytes))
+    if img.mode in ("RGBA", "P"):
+        img = img.convert("RGB")
+    w, h = img.size
+    if w > 800:
+        new_h = int(h * 800 / w)
+        img = img.resize((800, max(new_h, 1)), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=85)
+    return buf.getvalue()
+
+
+def _generate_pdf_thumbnail(file_bytes: bytes) -> Optional[bytes]:
+    """Generate a 200px-wide PNG thumbnail of the first page of a PDF.
+
+    Returns raw PNG bytes (not base64).
+    """
     import pdfplumber
     from PIL import Image
 
@@ -114,7 +147,7 @@ def _generate_pdf_thumbnail(file_bytes: bytes) -> Optional[str]:
             pil_img = pil_img.resize((200, max(new_h, 1)), Image.LANCZOS)
         buf = io.BytesIO()
         pil_img.save(buf, format="PNG")
-        return base64.b64encode(buf.getvalue()).decode("utf-8")
+        return buf.getvalue()
 
 
 def _extract_text_from_docx(file_bytes: bytes) -> str:
@@ -489,11 +522,12 @@ async def chat_upload(
         except Exception:
             processed = file_bytes
 
-        # Generate thumbnail
+        # Generate thumbnail (raw PNG bytes)
+        thumb_bytes = None
         try:
-            thumbnail = await asyncio.to_thread(_generate_image_thumbnail, processed)
+            thumb_bytes = await asyncio.to_thread(_generate_image_thumbnail, processed)
         except Exception:
-            thumbnail = None
+            pass
 
         # Create attachment record first to get ID for filename
         att = await chat_crud.create_attachment(
@@ -501,15 +535,31 @@ async def chat_upload(
             filename=filename,
             content_type="image/jpeg",
             is_image=True,
-            thumbnail_base64=thumbnail,
+            thumbnail_base64=None,
             file_size=len(processed),
         )
 
-        # Store processed image to filesystem
+        # Store processed image to filesystem (sharded directory)
         files_dir = settings.chat_files_path
-        os.makedirs(files_dir, exist_ok=True)
-        storage_path = os.path.join(files_dir, f"{att.id}.jpg")
+        storage_path = _sharded_path(files_dir, att.id, ".jpg")
+        os.makedirs(os.path.dirname(storage_path), exist_ok=True)
         await asyncio.to_thread(_write_file, storage_path, processed)
+
+        # Save thumbnail to filesystem
+        thumb_url = None
+        if thumb_bytes:
+            thumb_path = _sharded_path(files_dir, att.id, "_thumb.png")
+            await asyncio.to_thread(_write_file, thumb_path, thumb_bytes)
+            att.thumbnail_path = thumb_path
+            thumb_url = f"/chat/api/attachments/{att.id}/thumbnail"
+
+        # Generate and save medium thumbnail (800px wide) for modal display
+        try:
+            medium_bytes = await asyncio.to_thread(_generate_medium_thumbnail, processed)
+            medium_path = _sharded_path(files_dir, att.id, "_medium.jpg")
+            await asyncio.to_thread(_write_file, medium_path, medium_bytes)
+        except Exception:
+            pass  # Non-critical — modal will fall back to full image
 
         att.storage_path = storage_path
         await db.flush()
@@ -520,7 +570,7 @@ async def chat_upload(
             "filename": filename,
             "content_type": "image/jpeg",
             "is_image": True,
-            "thumbnail": thumbnail,
+            "thumbnail": thumb_url,
         })
 
     # Text extraction for non-image files
@@ -546,10 +596,11 @@ async def chat_upload(
             status_code=422,
         )
 
-    # Generate thumbnail for PDFs
+    # Generate thumbnail for PDFs (raw bytes)
+    thumb_bytes = None
     if ext == ".pdf":
         try:
-            thumbnail = await asyncio.to_thread(_generate_pdf_thumbnail, file_bytes)
+            thumb_bytes = await asyncio.to_thread(_generate_pdf_thumbnail, file_bytes)
         except Exception:
             pass
 
@@ -558,10 +609,22 @@ async def chat_upload(
         filename=filename,
         content_type=content_type,
         is_image=False,
-        thumbnail_base64=thumbnail,
+        thumbnail_base64=None,
         extracted_text=extracted_text,
         file_size=len(file_bytes),
     )
+
+    # Save PDF thumbnail to filesystem
+    thumb_url = None
+    if thumb_bytes:
+        files_dir = settings.chat_files_path
+        thumb_path = _sharded_path(files_dir, att.id, "_thumb.png")
+        os.makedirs(os.path.dirname(thumb_path), exist_ok=True)
+        await asyncio.to_thread(_write_file, thumb_path, thumb_bytes)
+        att.thumbnail_path = thumb_path
+        thumb_url = f"/chat/api/attachments/{att.id}/thumbnail"
+        await db.flush()
+
     await db.commit()
 
     return JSONResponse({
@@ -569,7 +632,7 @@ async def chat_upload(
         "filename": filename,
         "content_type": content_type,
         "is_image": False,
-        "thumbnail": thumbnail,
+        "thumbnail": thumb_url,
     })
 
 
@@ -577,6 +640,75 @@ def _write_file(path: str, data: bytes):
     """Write bytes to a file (used in asyncio.to_thread)."""
     with open(path, "wb") as f:
         f.write(data)
+
+
+# ---------------------------------------------------------------------------
+# Medium thumbnail serving
+# ---------------------------------------------------------------------------
+
+@chat_router.get("/chat/api/attachments/{attachment_id}/medium")
+async def serve_medium_thumbnail(
+    attachment_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Serve the 800px medium thumbnail for an image attachment."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    att = await chat_crud.get_attachment(db, attachment_id, user_id)
+    if not att or not att.is_image:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+
+    settings = get_settings()
+
+    # Try sharded path first, then legacy flat path, then full image fallback
+    medium_path = _sharded_path(settings.chat_files_path, att.id, "_medium.jpg")
+    if not os.path.exists(medium_path):
+        legacy_medium = os.path.join(settings.chat_files_path, f"{att.id}_medium.jpg")
+        if os.path.exists(legacy_medium):
+            medium_path = legacy_medium
+        elif att.storage_path and os.path.exists(att.storage_path):
+            medium_path = att.storage_path
+        else:
+            raise HTTPException(status_code=404, detail="Image file not found")
+
+    return FileResponse(medium_path, media_type="image/jpeg")
+
+
+# ---------------------------------------------------------------------------
+# Thumbnail serving
+# ---------------------------------------------------------------------------
+
+@chat_router.get("/chat/api/attachments/{attachment_id}/thumbnail")
+async def serve_thumbnail(
+    attachment_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Serve the small PNG thumbnail for an attachment."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    att = await chat_crud.get_attachment(db, attachment_id, user_id)
+    if not att:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+
+    # Prefer filesystem thumbnail_path
+    if att.thumbnail_path and os.path.exists(att.thumbnail_path):
+        return FileResponse(att.thumbnail_path, media_type="image/png")
+
+    # Fall back to legacy base64 data in DB
+    if att.thumbnail_base64:
+        thumb_bytes = base64.b64decode(att.thumbnail_base64)
+        return StreamingResponse(
+            io.BytesIO(thumb_bytes),
+            media_type="image/png",
+        )
+
+    raise HTTPException(status_code=404, detail="Thumbnail not found")
 
 
 # ---------------------------------------------------------------------------

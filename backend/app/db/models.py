@@ -589,7 +589,7 @@ class Response(Base, TimestampMixin):
     )
 
     # Response content
-    content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Final aggregated response
+    content: Mapped[Optional[str]] = mapped_column(MEDIUMTEXT, nullable=True)  # Final aggregated response
     finish_reason: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
     # Streaming metadata
@@ -700,7 +700,7 @@ class ChatMessage(Base, TimestampMixin):
         Integer, ForeignKey("chat_conversations.id"), nullable=False
     )
     role: Mapped[str] = mapped_column(String(20), nullable=False)
-    content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    content: Mapped[Optional[str]] = mapped_column(MEDIUMTEXT, nullable=True)
 
     # Relationships
     conversation: Mapped["ChatConversation"] = relationship(
@@ -730,6 +730,7 @@ class ChatAttachment(Base, TimestampMixin):
     is_image: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     storage_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     thumbnail_base64: Mapped[Optional[str]] = mapped_column(MEDIUMTEXT, nullable=True)
+    thumbnail_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     extracted_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     file_size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 

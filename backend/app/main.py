@@ -17,7 +17,7 @@
 import asyncio
 import uuid
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,6 +35,8 @@ from backend.app.logging_config import (
     get_logger,
     setup_logging,
 )
+from backend.app.db import chat_crud
+from backend.app.db.session import get_async_db_context
 from backend.app.settings import get_settings
 from backend.app.storage.artifacts import get_artifact_storage
 
@@ -43,9 +45,37 @@ setup_logging()
 logger = get_logger(__name__)
 
 
+async def _conversation_cleanup_loop() -> None:
+    """Background loop that deletes expired conversations and orphan attachments."""
+    settings = get_settings()
+    while True:
+        try:
+            await asyncio.sleep(settings.conversation_cleanup_interval)
+            async with get_async_db_context() as db:
+                deleted = await chat_crud.delete_expired_conversations(
+                    db, settings.conversation_retention_days
+                )
+                orphans = await chat_crud.delete_all_orphan_attachments(db)
+                await db.commit()
+                if deleted or orphans:
+                    logger.info(
+                        "conversation_cleanup",
+                        conversations_deleted=deleted,
+                        orphan_attachments_deleted=orphans,
+                    )
+        except asyncio.CancelledError:
+            break
+        except Exception:
+            logger.exception("conversation_cleanup_error")
+
+
+_cleanup_task: Optional[asyncio.Task] = None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     """Application lifespan manager."""
+    global _cleanup_task
     logger.info("Starting MindRouter2...")
 
     # Initialize components
@@ -56,12 +86,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     storage = get_artifact_storage()
     await storage.initialize()
 
+    # Start background cleanup loop
+    _cleanup_task = asyncio.create_task(_conversation_cleanup_loop())
+
     logger.info("MindRouter2 started successfully")
 
     yield
 
     # Shutdown
     logger.info("Shutting down MindRouter2...")
+    if _cleanup_task:
+        _cleanup_task.cancel()
+        try:
+            await _cleanup_task
+        except asyncio.CancelledError:
+            pass
     await shutdown_scheduler()
     await shutdown_registry()
     logger.info("MindRouter2 shutdown complete")

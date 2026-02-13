@@ -41,8 +41,8 @@ class Settings(BaseSettings):
     database_url: str = Field(
         default="mysql+pymysql://mindrouter:mindrouter_password@localhost:3306/mindrouter"
     )
-    database_pool_size: int = 20
-    database_max_overflow: int = 10
+    database_pool_size: int = 30
+    database_max_overflow: int = 20
     database_echo: bool = False
 
     # Redis (optional)
@@ -154,6 +154,10 @@ class Settings(BaseSettings):
         ".docx", ".xlsx", ".pdf",
         ".jpg", ".jpeg", ".png", ".gif", ".webp",
     ]
+
+    # Conversation Retention
+    conversation_retention_days: int = 730  # 2 years
+    conversation_cleanup_interval: int = 86400  # seconds (24 hours)
 
     # Tokenizer
     default_tokenizer: str = "cl100k_base"

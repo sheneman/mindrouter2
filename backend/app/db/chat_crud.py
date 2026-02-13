@@ -22,7 +22,9 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.app.db.models import ChatAttachment, ChatConversation, ChatMessage
+from sqlalchemy import func
+
+from backend.app.db.models import ChatAttachment, ChatConversation, ChatMessage, User
 
 
 # ---------------------------------------------------------------------------
@@ -92,11 +94,18 @@ async def get_conversation_with_messages(
     for msg in conv.messages:
         attachments = []
         for att in msg.attachments:
+            # Determine thumbnail value: URL for filesystem, data URI for legacy base64
+            if att.thumbnail_path:
+                thumb = f"/chat/api/attachments/{att.id}/thumbnail"
+            elif att.thumbnail_base64:
+                thumb = f"data:image/png;base64,{att.thumbnail_base64}"
+            else:
+                thumb = None
             attachments.append({
                 "id": att.id,
                 "filename": att.filename,
                 "is_image": att.is_image,
-                "thumbnail": att.thumbnail_base64,
+                "thumbnail": thumb,
                 "content_type": att.content_type,
             })
         messages.append({
@@ -149,12 +158,16 @@ async def delete_conversation(
     )
     messages = list(result.scalars().all())
 
-    # Collect file paths to delete
+    # Collect file paths to delete (include medium and small thumbnails)
     file_paths = []
     for msg in messages:
         for att in msg.attachments:
             if att.storage_path:
                 file_paths.append(att.storage_path)
+                medium = att.storage_path.replace('.jpg', '_medium.jpg')
+                file_paths.append(medium)
+            if att.thumbnail_path:
+                file_paths.append(att.thumbnail_path)
 
     # Delete attachments, messages, then conversation
     for msg in messages:
@@ -294,6 +307,19 @@ async def delete_orphan_attachments(
                     os.remove(att.storage_path)
             except OSError:
                 pass
+            # Also remove medium thumbnail if it exists
+            medium = att.storage_path.replace('.jpg', '_medium.jpg')
+            try:
+                if os.path.exists(medium):
+                    os.remove(medium)
+            except OSError:
+                pass
+        if att.thumbnail_path:
+            try:
+                if os.path.exists(att.thumbnail_path):
+                    os.remove(att.thumbnail_path)
+            except OSError:
+                pass
 
     if orphans:
         await db.execute(
@@ -306,3 +332,240 @@ async def delete_orphan_attachments(
         await db.flush()
 
     return len(orphans)
+
+
+# ---------------------------------------------------------------------------
+# Global Orphan Cleanup
+# ---------------------------------------------------------------------------
+
+async def delete_all_orphan_attachments(
+    db: AsyncSession,
+    max_age_hours: int = 24,
+) -> int:
+    """Delete all orphan attachments (unlinked to any message) older than max_age_hours."""
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+    result = await db.execute(
+        select(ChatAttachment).where(
+            ChatAttachment.message_id.is_(None),
+            ChatAttachment.created_at < cutoff,
+        )
+    )
+    orphans = list(result.scalars().all())
+
+    for att in orphans:
+        _remove_attachment_files(att)
+
+    if orphans:
+        await db.execute(
+            delete(ChatAttachment).where(
+                ChatAttachment.message_id.is_(None),
+                ChatAttachment.created_at < cutoff,
+            )
+        )
+        await db.flush()
+
+    return len(orphans)
+
+
+def _remove_attachment_files(att: ChatAttachment) -> None:
+    """Remove all filesystem files for an attachment."""
+    if att.storage_path:
+        for path in [att.storage_path, att.storage_path.replace('.jpg', '_medium.jpg')]:
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except OSError:
+                pass
+    if att.thumbnail_path:
+        try:
+            if os.path.exists(att.thumbnail_path):
+                os.remove(att.thumbnail_path)
+        except OSError:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Conversation Retention
+# ---------------------------------------------------------------------------
+
+async def delete_expired_conversations(
+    db: AsyncSession,
+    retention_days: int,
+    batch_size: int = 100,
+) -> int:
+    """Delete conversations older than retention_days in batches.
+
+    Returns total number of conversations deleted.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    total_deleted = 0
+
+    while True:
+        # Find a batch of expired conversations
+        result = await db.execute(
+            select(ChatConversation)
+            .where(ChatConversation.updated_at < cutoff)
+            .limit(batch_size)
+        )
+        batch = list(result.scalars().all())
+        if not batch:
+            break
+
+        conv_ids = [c.id for c in batch]
+
+        # Load attachments for file cleanup
+        att_result = await db.execute(
+            select(ChatAttachment)
+            .join(ChatMessage, ChatAttachment.message_id == ChatMessage.id)
+            .where(ChatMessage.conversation_id.in_(conv_ids))
+        )
+        attachments = list(att_result.scalars().all())
+
+        # Collect file paths
+        for att in attachments:
+            _remove_attachment_files(att)
+
+        # Delete in order: attachments -> messages -> conversations
+        if conv_ids:
+            # Delete attachments linked to messages in these conversations
+            await db.execute(
+                delete(ChatAttachment).where(
+                    ChatAttachment.message_id.in_(
+                        select(ChatMessage.id).where(
+                            ChatMessage.conversation_id.in_(conv_ids)
+                        )
+                    )
+                )
+            )
+            await db.execute(
+                delete(ChatMessage).where(
+                    ChatMessage.conversation_id.in_(conv_ids)
+                )
+            )
+            await db.execute(
+                delete(ChatConversation).where(
+                    ChatConversation.id.in_(conv_ids)
+                )
+            )
+            await db.flush()
+            await db.commit()
+
+        total_deleted += len(batch)
+
+    return total_deleted
+
+
+# ---------------------------------------------------------------------------
+# Admin Conversation Queries
+# ---------------------------------------------------------------------------
+
+async def search_conversations_admin(
+    db: AsyncSession,
+    user_id: Optional[int] = None,
+    model: Optional[str] = None,
+    search_text: Optional[str] = None,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    skip: int = 0,
+    limit: int = 50,
+) -> tuple:
+    """Search conversations for admin view.
+
+    Returns (list of dicts, total_count).
+    """
+    # Base query with message count
+    msg_count = (
+        select(func.count(ChatMessage.id))
+        .where(ChatMessage.conversation_id == ChatConversation.id)
+        .correlate(ChatConversation)
+        .scalar_subquery()
+    )
+
+    query = (
+        select(
+            ChatConversation,
+            User.username,
+            msg_count.label("message_count"),
+        )
+        .join(User, ChatConversation.user_id == User.id)
+    )
+    count_query = (
+        select(func.count(ChatConversation.id))
+        .join(User, ChatConversation.user_id == User.id)
+    )
+
+    conditions = []
+    if user_id:
+        conditions.append(ChatConversation.user_id == user_id)
+    if model:
+        conditions.append(ChatConversation.model == model)
+    if search_text:
+        conditions.append(
+            ChatConversation.title.ilike(f"%{search_text}%")
+        )
+    if start_date:
+        conditions.append(ChatConversation.created_at >= start_date)
+    if end_date:
+        conditions.append(ChatConversation.created_at <= end_date)
+
+    if conditions:
+        for cond in conditions:
+            query = query.where(cond)
+            count_query = count_query.where(cond)
+
+    count_result = await db.execute(count_query)
+    total = count_result.scalar_one()
+
+    query = query.order_by(ChatConversation.updated_at.desc()).offset(skip).limit(limit)
+    result = await db.execute(query)
+    rows = result.all()
+
+    conversations = []
+    for conv, username, msg_count_val in rows:
+        conversations.append({
+            "id": conv.id,
+            "user_id": conv.user_id,
+            "username": username,
+            "title": conv.title,
+            "model": conv.model,
+            "message_count": msg_count_val or 0,
+            "created_at": conv.created_at,
+            "updated_at": conv.updated_at,
+        })
+
+    return conversations, total
+
+
+async def get_conversation_messages_admin(
+    db: AsyncSession,
+    conversation_id: int,
+) -> Optional[list]:
+    """Get full messages for a conversation (admin access, no user_id check).
+
+    Returns list of message dicts, or None if conversation not found.
+    """
+    result = await db.execute(
+        select(ChatConversation).where(ChatConversation.id == conversation_id)
+    )
+    conv = result.scalar_one_or_none()
+    if not conv:
+        return None
+
+    msg_result = await db.execute(
+        select(ChatMessage)
+        .where(ChatMessage.conversation_id == conversation_id)
+        .options(selectinload(ChatMessage.attachments))
+        .order_by(ChatMessage.created_at)
+    )
+    messages = list(msg_result.scalars().all())
+
+    return [
+        {
+            "id": msg.id,
+            "role": msg.role,
+            "content": msg.content,
+            "created_at": msg.created_at.isoformat() if msg.created_at else None,
+            "attachment_count": len(msg.attachments),
+        }
+        for msg in messages
+    ]
