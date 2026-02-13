@@ -1041,6 +1041,115 @@ async def admin_audit(
     )
 
 
+@dashboard_router.get("/admin/audit/export")
+async def admin_audit_export(
+    request: Request,
+    format: str = "csv",
+    search: Optional[str] = None,
+    user_id_filter: Optional[int] = None,
+    model_filter: Optional[str] = None,
+    status_filter: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    include_content: bool = False,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Export audit log as CSV or JSON with current filters."""
+    session_user_id = get_session_user_id(request)
+    if not session_user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, session_user_id)
+    if not user or (not user.group or not user.group.is_admin):
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    from backend.app.db.models import RequestStatus
+
+    # Parse filters
+    parsed_status = None
+    if status_filter:
+        try:
+            parsed_status = RequestStatus(status_filter)
+        except ValueError:
+            pass
+    parsed_start = None
+    parsed_end = None
+    if start_date:
+        try:
+            parsed_start = datetime.fromisoformat(start_date)
+        except ValueError:
+            pass
+    if end_date:
+        try:
+            parsed_end = datetime.fromisoformat(end_date)
+        except ValueError:
+            pass
+
+    audit_requests, _ = await crud.search_requests(
+        db,
+        user_id=user_id_filter,
+        model=model_filter,
+        status=parsed_status,
+        start_date=parsed_start,
+        end_date=parsed_end,
+        search_text=search,
+        skip=0,
+        limit=10000,
+    )
+
+    # Build export rows
+    rows = []
+    for req in audit_requests:
+        row = {
+            "request_uuid": req.request_uuid,
+            "created_at": req.created_at.isoformat() if req.created_at else "",
+            "user_id": req.user_id,
+            "model": req.model,
+            "endpoint": req.endpoint,
+            "status": req.status.value if req.status else "",
+            "prompt_tokens": req.prompt_tokens or 0,
+            "completion_tokens": req.completion_tokens or 0,
+            "total_tokens": (req.prompt_tokens or 0) + (req.completion_tokens or 0),
+            "total_time_ms": req.total_time_ms or "",
+            "error_message": req.error_message or "",
+        }
+        if include_content:
+            row["messages"] = json.dumps(req.messages) if req.messages else ""
+            row["prompt"] = req.prompt or ""
+            row["parameters"] = json.dumps(req.parameters) if req.parameters else ""
+            row["response_content"] = req.response.content if req.response else ""
+            row["finish_reason"] = req.response.finish_reason if req.response else ""
+        rows.append(row)
+
+    if format == "json":
+        content = json.dumps(rows, indent=2)
+        return StreamingResponse(
+            io.BytesIO(content.encode()),
+            media_type="application/json",
+            headers={"Content-Disposition": "attachment; filename=audit_log.json"},
+        )
+
+    # CSV format
+    output = io.StringIO()
+    fieldnames = [
+        "request_uuid", "created_at", "user_id", "model", "endpoint",
+        "status", "prompt_tokens", "completion_tokens", "total_tokens",
+        "total_time_ms", "error_message",
+    ]
+    if include_content:
+        fieldnames.extend(["messages", "prompt", "parameters", "response_content", "finish_reason"])
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+    for row in rows:
+        writer.writerow({k: row.get(k, "") for k in fieldnames})
+
+    return StreamingResponse(
+        io.BytesIO(output.getvalue().encode()),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=audit_log.csv"},
+    )
+
+
 @dashboard_router.get("/admin/audit/{request_uuid}/detail")
 async def admin_audit_detail(
     request: Request,

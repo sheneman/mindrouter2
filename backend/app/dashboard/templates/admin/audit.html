@@ -51,6 +51,11 @@
                         <div class="col-12 d-flex gap-2">
                             <button type="submit" class="btn btn-primary btn-sm">Apply</button>
                             <a href="/admin/audit" class="btn btn-outline-secondary btn-sm">Reset</a>
+                            <span class="ms-auto d-flex gap-2">
+                                <a href="/admin/audit/export?format=csv{% if search %}&search={{ search }}{% endif %}{% if user_id_filter %}&user_id_filter={{ user_id_filter }}{% endif %}{% if model_filter %}&model_filter={{ model_filter }}{% endif %}{% if status_filter %}&status_filter={{ status_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}" class="btn btn-outline-success btn-sm"><i class="bi bi-filetype-csv"></i> CSV</a>
+                                <a href="/admin/audit/export?format=json{% if search %}&search={{ search }}{% endif %}{% if user_id_filter %}&user_id_filter={{ user_id_filter }}{% endif %}{% if model_filter %}&model_filter={{ model_filter }}{% endif %}{% if status_filter %}&status_filter={{ status_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}" class="btn btn-outline-info btn-sm"><i class="bi bi-filetype-json"></i> JSON</a>
+                                <a href="/admin/audit/export?format=json&include_content=true{% if search %}&search={{ search }}{% endif %}{% if user_id_filter %}&user_id_filter={{ user_id_filter }}{% endif %}{% if model_filter %}&model_filter={{ model_filter }}{% endif %}{% if status_filter %}&status_filter={{ status_filter }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}" class="btn btn-outline-warning btn-sm"><i class="bi bi-filetype-json"></i> JSON + Content</a>
+                            </span>
                         </div>
                     </form>
                 </div>
