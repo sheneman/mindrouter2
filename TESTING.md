@@ -39,9 +39,9 @@
 | `backend/app/tests/unit/test_latency_tracker.py` | 8 | Latency tracking, p50/p99 percentile calculations |
 | `backend/app/tests/unit/test_retry_failover.py` | 12 | Retry logic, exponential backoff, backend failover |
 | `backend/app/tests/unit/test_scheduler.py` | 30 | Fair-share WDRR scheduler, job queue, BackendScorer, HardConstraints |
-| `backend/app/tests/unit/test_quota.py` | 18 | Quota management, token accounting, RPM/concurrent limits |
+| `backend/app/tests/unit/test_quota.py` | 24 | Quota management, token accounting, RPM/concurrent limits, group-based defaults |
 | `backend/app/tests/unit/test_sidecar_client.py` | 16 | GPU sidecar client: auth, GPU info retrieval, communication |
-| `backend/app/tests/unit/test_accessibility.py` | 89 | WCAG 2.1 Level A/AA: ARIA, semantic HTML, heading hierarchy, forms |
+| `backend/app/tests/unit/test_accessibility.py` | 96 | WCAG 2.1 Level A/AA: ARIA, semantic HTML, heading hierarchy, forms, sidebar include |
 
 **Shared fixtures:** `backend/app/tests/conftest.py`
 
@@ -146,7 +146,7 @@ Exercises every API surface. Sections: `health`, `auth`, `openai`, `ollama`, `cr
 **Makefile:** `make test-a11y`
 **Requirements:** None (parses template files directly).
 
-Subset of unit tests, broken out for convenience. 89 tests validating WCAG 2.1 Level A and AA compliance across all 15 Jinja2 HTML templates.
+Subset of unit tests, broken out for convenience. 96 tests validating WCAG 2.1 Level A and AA compliance across all 18 Jinja2 HTML templates (including sidebar include, user detail, groups, and API keys).
 
 ---
 

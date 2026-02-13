@@ -89,33 +89,35 @@ class FairShareManager:
     async def register_user(
         self,
         user_id: int,
-        role: str,
+        role: str = "",
         weight_override: Optional[float] = None,
+        weight: Optional[float] = None,
     ) -> UserState:
         """
         Register or update a user's scheduling state.
 
         Args:
             user_id: User ID
-            role: User role (student, staff, faculty, admin)
+            role: User role (deprecated, kept for backward compat)
             weight_override: Optional weight override
+            weight: Direct weight value (preferred over role-based lookup)
 
         Returns:
             UserState for the user
         """
         async with self._lock:
-            weight = weight_override or self.get_role_weight(role)
+            resolved_weight = weight_override or weight or (self.get_role_weight(role) if role else 1.0)
 
             if user_id in self._user_states:
                 state = self._user_states[user_id]
-                state.weight = weight
+                state.weight = resolved_weight
             else:
-                state = UserState(user_id=user_id, weight=weight)
+                state = UserState(user_id=user_id, weight=resolved_weight)
                 self._user_states[user_id] = state
 
             return state
 
-    async def compute_priority(self, job: Job, role: str) -> float:
+    async def compute_priority(self, job: Job, role: str = "", weight: Optional[float] = None) -> float:
         """
         Compute priority for a job using WDRR algorithm.
 
@@ -124,7 +126,8 @@ class FairShareManager:
 
         Args:
             job: The job to compute priority for
-            role: User's role
+            role: User's role (deprecated)
+            weight: Direct weight value (preferred)
 
         Returns:
             Priority score (higher = more priority)
@@ -132,9 +135,9 @@ class FairShareManager:
         async with self._lock:
             # Ensure user is registered
             if job.user_id not in self._user_states:
-                weight = self.get_role_weight(role)
+                resolved_weight = weight or (self.get_role_weight(role) if role else 1.0)
                 self._user_states[job.user_id] = UserState(
-                    user_id=job.user_id, weight=weight
+                    user_id=job.user_id, weight=resolved_weight
                 )
 
             state = self._user_states[job.user_id]
@@ -152,19 +155,20 @@ class FairShareManager:
 
             return priority
 
-    async def on_job_queued(self, job: Job, role: str) -> None:
+    async def on_job_queued(self, job: Job, role: str = "", weight: Optional[float] = None) -> None:
         """
         Called when a job is added to the queue.
 
         Args:
             job: The queued job
-            role: User's role
+            role: User's role (deprecated)
+            weight: Direct weight value (preferred)
         """
         async with self._lock:
             if job.user_id not in self._user_states:
-                weight = self.get_role_weight(role)
+                resolved_weight = weight or (self.get_role_weight(role) if role else 1.0)
                 self._user_states[job.user_id] = UserState(
-                    user_id=job.user_id, weight=weight
+                    user_id=job.user_id, weight=resolved_weight
                 )
 
             state = self._user_states[job.user_id]

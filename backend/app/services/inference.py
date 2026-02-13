@@ -465,7 +465,14 @@ class InferenceService:
 
         # Submit to scheduler (only on first attempt — not on retries)
         if not exclude_backend_ids:
-            await self._scheduler.submit_job(job, user.role.value)
+            # Get weight from group (with quota weight_override taking precedence)
+            user_weight = 1.0
+            if hasattr(user, 'group') and user.group:
+                user_weight = float(user.group.scheduler_weight)
+            sched_quota = await crud.get_user_quota(self.db, user.id)
+            if sched_quota and sched_quota.weight_override:
+                user_weight = float(sched_quota.weight_override)
+            await self._scheduler.submit_job(job, user_role=user.role.value, user_weight=user_weight)
 
         # Retry loop: wait for capacity instead of immediately 503-ing
         # Use half the backend timeout for routing, leaving the rest for inference

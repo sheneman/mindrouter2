@@ -37,6 +37,9 @@
                     <li class="nav-item">
                         <a class="nav-link" href="/">Status</a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/documentation"><i class="bi bi-book"></i> Docs</a>
+                    </li>
                     {% if user %}
                     <li class="nav-item">
                         <a class="nav-link" href="/chat">Chat</a>
@@ -44,7 +47,7 @@
                     <li class="nav-item">
                         <a class="nav-link" href="/dashboard">Dashboard</a>
                     </li>
-                    {% if user.role.value == 'admin' %}
+                    {% if user.group and user.group.is_admin %}
                     <li class="nav-item">
                         <a class="nav-link" href="/admin">Admin</a>
                     </li>
@@ -54,7 +57,7 @@
                 <ul class="navbar-nav">
                     {% if user %}
                     <li class="nav-item">
-                        <span class="nav-link text-light">{{ user.username }} ({{ user.role.value }})</span>
+                        <span class="nav-link text-light">{{ user.username }} ({{ user.group.display_name if user.group else user.role.value }})</span>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="/logout">Logout</a>

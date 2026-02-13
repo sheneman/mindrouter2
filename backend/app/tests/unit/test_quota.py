@@ -208,6 +208,113 @@ class TestRoleLimits:
         assert faculty["token_budget"] < admin["token_budget"]
 
 
+class TestGroupLimits:
+    """Tests for group-based default limits (replaces role hierarchy)."""
+
+    @pytest.fixture
+    def default_group_quotas(self):
+        """Default quotas by group name."""
+        return {
+            "students": {
+                "token_budget": 100000,
+                "rpm_limit": 30,
+                "max_concurrent": 2,
+                "scheduler_weight": 1,
+                "is_admin": False,
+            },
+            "staff": {
+                "token_budget": 500000,
+                "rpm_limit": 60,
+                "max_concurrent": 4,
+                "scheduler_weight": 2,
+                "is_admin": False,
+            },
+            "faculty": {
+                "token_budget": 1000000,
+                "rpm_limit": 120,
+                "max_concurrent": 8,
+                "scheduler_weight": 3,
+                "is_admin": False,
+            },
+            "researchers": {
+                "token_budget": 1000000,
+                "rpm_limit": 120,
+                "max_concurrent": 8,
+                "scheduler_weight": 3,
+                "is_admin": False,
+            },
+            "admin": {
+                "token_budget": 10000000,
+                "rpm_limit": 1000,
+                "max_concurrent": 50,
+                "scheduler_weight": 10,
+                "is_admin": True,
+            },
+            "nerds": {
+                "token_budget": 500000,
+                "rpm_limit": 60,
+                "max_concurrent": 4,
+                "scheduler_weight": 2,
+                "is_admin": False,
+            },
+            "other": {
+                "token_budget": 100000,
+                "rpm_limit": 30,
+                "max_concurrent": 2,
+                "scheduler_weight": 1,
+                "is_admin": False,
+            },
+        }
+
+    def test_students_defaults(self, default_group_quotas):
+        """Test students group default quotas."""
+        limits = default_group_quotas["students"]
+        assert limits["token_budget"] == 100000
+        assert limits["rpm_limit"] == 30
+        assert limits["max_concurrent"] == 2
+        assert limits["scheduler_weight"] == 1
+        assert limits["is_admin"] is False
+
+    def test_faculty_defaults(self, default_group_quotas):
+        """Test faculty group default quotas."""
+        limits = default_group_quotas["faculty"]
+        assert limits["token_budget"] == 1000000
+        assert limits["rpm_limit"] == 120
+        assert limits["max_concurrent"] == 8
+        assert limits["scheduler_weight"] == 3
+
+    def test_admin_defaults(self, default_group_quotas):
+        """Test admin group default quotas."""
+        limits = default_group_quotas["admin"]
+        assert limits["token_budget"] == 10000000
+        assert limits["rpm_limit"] == 1000
+        assert limits["max_concurrent"] == 50
+        assert limits["scheduler_weight"] == 10
+        assert limits["is_admin"] is True
+
+    def test_researchers_match_faculty(self, default_group_quotas):
+        """Test that researchers and faculty share the same quotas."""
+        researchers = default_group_quotas["researchers"]
+        faculty = default_group_quotas["faculty"]
+        assert researchers["token_budget"] == faculty["token_budget"]
+        assert researchers["rpm_limit"] == faculty["rpm_limit"]
+        assert researchers["scheduler_weight"] == faculty["scheduler_weight"]
+
+    def test_only_admin_has_admin_flag(self, default_group_quotas):
+        """Test that only admin group has is_admin=True."""
+        for name, limits in default_group_quotas.items():
+            if name == "admin":
+                assert limits["is_admin"] is True
+            else:
+                assert limits["is_admin"] is False, f"{name} should not be admin"
+
+    def test_seven_default_groups(self, default_group_quotas):
+        """Test that there are exactly 7 default groups."""
+        assert len(default_group_quotas) == 7
+        expected = {"students", "staff", "faculty", "researchers", "admin", "nerds", "other"}
+        assert set(default_group_quotas.keys()) == expected
+
+
 class TestQuotaCheckLogic:
     """Tests for quota check logic."""
 

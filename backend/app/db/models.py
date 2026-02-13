@@ -103,6 +103,26 @@ class Modality(str, PyEnum):
     VISION = "vision"
 
 
+# Group Model
+class Group(Base, TimestampMixin):
+    """User group for authorization and quota defaults."""
+
+    __tablename__ = "groups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    display_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    token_budget: Mapped[int] = mapped_column(BigInteger, nullable=False, default=100000)
+    rpm_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    max_concurrent: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
+    scheduler_weight: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Relationships
+    users: Mapped[List["User"]] = relationship("User", back_populates="group")
+
+
 # User and Authentication Models
 class User(Base, TimestampMixin, SoftDeleteMixin):
     """User account model."""
@@ -123,7 +143,16 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Group membership
+    group_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("groups.id"), nullable=True)
+
+    # Profile fields
+    college: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    department: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    intended_use: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     # Relationships
+    group: Mapped[Optional["Group"]] = relationship("Group", back_populates="users")
     api_keys: Mapped[List["ApiKey"]] = relationship("ApiKey", back_populates="user")
     quota: Mapped[Optional["Quota"]] = relationship("Quota", back_populates="user", uselist=False)
     quota_requests: Mapped[List["QuotaRequest"]] = relationship(
@@ -134,6 +163,7 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
 
     __table_args__ = (
         Index("ix_users_role_active", "role", "is_active"),
+        Index("ix_users_group_active", "group_id", "is_active"),
     )
 
 

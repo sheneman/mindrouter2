@@ -115,6 +115,23 @@ async def public_dashboard(
     )
 
 
+@dashboard_router.get("/documentation", response_class=HTMLResponse)
+async def documentation(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Public documentation page."""
+    user_id = get_session_user_id(request)
+    user = None
+    if user_id:
+        user = await crud.get_user_by_id(db, user_id)
+
+    return templates.TemplateResponse(
+        "public/documentation.html",
+        {"request": request, "user": user},
+    )
+
+
 @dashboard_router.get("/request-api-key", response_class=HTMLResponse)
 async def request_api_key_form(request: Request):
     """Display API key request form."""
@@ -343,7 +360,7 @@ async def admin_dashboard(
         return RedirectResponse(url="/login", status_code=302)
 
     user = await crud.get_user_by_id(db, user_id)
-    if not user or user.role != UserRole.ADMIN:
+    if not user or (not user.group or not user.group.is_admin):
         return RedirectResponse(url="/dashboard", status_code=302)
 
     # Get backends
@@ -372,22 +389,41 @@ async def admin_dashboard(
 @dashboard_router.get("/admin/users", response_class=HTMLResponse)
 async def admin_users(
     request: Request,
+    search: Optional[str] = None,
+    group_id: Optional[int] = None,
+    page: int = 1,
     db: AsyncSession = Depends(get_async_db),
 ):
-    """Admin user management."""
+    """Admin user management with search and pagination."""
     user_id = get_session_user_id(request)
     if not user_id:
         return RedirectResponse(url="/login", status_code=302)
 
     user = await crud.get_user_by_id(db, user_id)
-    if not user or user.role != UserRole.ADMIN:
+    if not user or (not user.group or not user.group.is_admin):
         return RedirectResponse(url="/dashboard", status_code=302)
 
-    users = await crud.get_users(db, limit=1000)
+    per_page = 25
+    skip = (page - 1) * per_page
+    users, total = await crud.get_users(
+        db, skip=skip, limit=per_page, group_id=group_id, search=search
+    )
+    groups = await crud.get_all_groups(db)
+    total_pages = max(1, (total + per_page - 1) // per_page)
 
     return templates.TemplateResponse(
         "admin/users.html",
-        {"request": request, "user": user, "users": users},
+        {
+            "request": request,
+            "user": user,
+            "users": users,
+            "groups": groups,
+            "total": total,
+            "page": page,
+            "total_pages": total_pages,
+            "search": search or "",
+            "group_id": group_id,
+        },
     )
 
 
@@ -402,7 +438,7 @@ async def admin_requests(
         return RedirectResponse(url="/login", status_code=302)
 
     user = await crud.get_user_by_id(db, user_id)
-    if not user or user.role != UserRole.ADMIN:
+    if not user or (not user.group or not user.group.is_admin):
         return RedirectResponse(url="/dashboard", status_code=302)
 
     pending_requests = await crud.get_pending_quota_requests(db)
@@ -425,7 +461,7 @@ async def approve_request(
         return RedirectResponse(url="/login", status_code=302)
 
     user = await crud.get_user_by_id(db, user_id)
-    if not user or user.role != UserRole.ADMIN:
+    if not user or (not user.group or not user.group.is_admin):
         return RedirectResponse(url="/dashboard", status_code=302)
 
     await crud.review_quota_request(
@@ -451,7 +487,7 @@ async def deny_request(
         return RedirectResponse(url="/login", status_code=302)
 
     user = await crud.get_user_by_id(db, user_id)
-    if not user or user.role != UserRole.ADMIN:
+    if not user or (not user.group or not user.group.is_admin):
         return RedirectResponse(url="/dashboard", status_code=302)
 
     await crud.review_quota_request(
@@ -478,7 +514,7 @@ async def admin_nodes(
         return RedirectResponse(url="/login", status_code=302)
 
     user = await crud.get_user_by_id(db, user_id)
-    if not user or user.role != UserRole.ADMIN:
+    if not user or (not user.group or not user.group.is_admin):
         return RedirectResponse(url="/dashboard", status_code=302)
 
     nodes = await crud.get_all_nodes(db)
@@ -524,7 +560,7 @@ async def register_node(
         return RedirectResponse(url="/login", status_code=302)
 
     user = await crud.get_user_by_id(db, user_id)
-    if not user or user.role != UserRole.ADMIN:
+    if not user or (not user.group or not user.group.is_admin):
         return RedirectResponse(url="/dashboard", status_code=302)
 
     try:
@@ -566,7 +602,7 @@ async def edit_node(
         return RedirectResponse(url="/login", status_code=302)
 
     user = await crud.get_user_by_id(db, user_id)
-    if not user or user.role != UserRole.ADMIN:
+    if not user or (not user.group or not user.group.is_admin):
         return RedirectResponse(url="/dashboard", status_code=302)
 
     try:
@@ -612,7 +648,7 @@ async def remove_node(
         return RedirectResponse(url="/login", status_code=302)
 
     user = await crud.get_user_by_id(db, user_id)
-    if not user or user.role != UserRole.ADMIN:
+    if not user or (not user.group or not user.group.is_admin):
         return RedirectResponse(url="/dashboard", status_code=302)
 
     registry = get_registry()
@@ -637,7 +673,7 @@ async def refresh_node(
         return RedirectResponse(url="/login", status_code=302)
 
     user = await crud.get_user_by_id(db, user_id)
-    if not user or user.role != UserRole.ADMIN:
+    if not user or (not user.group or not user.group.is_admin):
         return RedirectResponse(url="/dashboard", status_code=302)
 
     registry = get_registry()
@@ -658,7 +694,7 @@ async def admin_backends(
         return RedirectResponse(url="/login", status_code=302)
 
     user = await crud.get_user_by_id(db, user_id)
-    if not user or user.role != UserRole.ADMIN:
+    if not user or (not user.group or not user.group.is_admin):
         return RedirectResponse(url="/dashboard", status_code=302)
 
     registry = get_registry()
@@ -708,7 +744,7 @@ async def register_backend(
         return RedirectResponse(url="/login", status_code=302)
 
     user = await crud.get_user_by_id(db, user_id)
-    if not user or user.role != UserRole.ADMIN:
+    if not user or (not user.group or not user.group.is_admin):
         return RedirectResponse(url="/dashboard", status_code=302)
 
     try:
@@ -767,7 +803,7 @@ async def edit_backend(
         return RedirectResponse(url="/login", status_code=302)
 
     user = await crud.get_user_by_id(db, user_id)
-    if not user or user.role != UserRole.ADMIN:
+    if not user or (not user.group or not user.group.is_admin):
         return RedirectResponse(url="/dashboard", status_code=302)
 
     try:
@@ -826,7 +862,7 @@ async def disable_backend(
         return RedirectResponse(url="/login", status_code=302)
 
     user = await crud.get_user_by_id(db, user_id)
-    if not user or user.role != UserRole.ADMIN:
+    if not user or (not user.group or not user.group.is_admin):
         return RedirectResponse(url="/dashboard", status_code=302)
 
     registry = get_registry()
@@ -846,7 +882,7 @@ async def enable_backend(
         return RedirectResponse(url="/login", status_code=302)
 
     user = await crud.get_user_by_id(db, user_id)
-    if not user or user.role != UserRole.ADMIN:
+    if not user or (not user.group or not user.group.is_admin):
         return RedirectResponse(url="/dashboard", status_code=302)
 
     registry = get_registry()
@@ -866,7 +902,7 @@ async def remove_backend(
         return RedirectResponse(url="/login", status_code=302)
 
     user = await crud.get_user_by_id(db, user_id)
-    if not user or user.role != UserRole.ADMIN:
+    if not user or (not user.group or not user.group.is_admin):
         return RedirectResponse(url="/dashboard", status_code=302)
 
     registry = get_registry()
@@ -889,7 +925,7 @@ async def refresh_backend(
         return RedirectResponse(url="/login", status_code=302)
 
     user = await crud.get_user_by_id(db, user_id)
-    if not user or user.role != UserRole.ADMIN:
+    if not user or (not user.group or not user.group.is_admin):
         return RedirectResponse(url="/dashboard", status_code=302)
 
     registry = get_registry()
@@ -908,7 +944,7 @@ async def admin_metrics(
         return RedirectResponse(url="/login", status_code=302)
 
     user = await crud.get_user_by_id(db, user_id)
-    if not user or user.role != UserRole.ADMIN:
+    if not user or (not user.group or not user.group.is_admin):
         return RedirectResponse(url="/dashboard", status_code=302)
 
     return templates.TemplateResponse(
@@ -928,7 +964,7 @@ async def admin_audit(
         return RedirectResponse(url="/login", status_code=302)
 
     user = await crud.get_user_by_id(db, user_id)
-    if not user or user.role != UserRole.ADMIN:
+    if not user or (not user.group or not user.group.is_admin):
         return RedirectResponse(url="/dashboard", status_code=302)
 
     # Get recent requests
@@ -937,4 +973,278 @@ async def admin_audit(
     return templates.TemplateResponse(
         "admin/audit.html",
         {"request": request, "user": user, "audit_requests": requests, "total": total},
+    )
+
+
+# Group management routes
+@dashboard_router.get("/admin/groups", response_class=HTMLResponse)
+async def admin_groups(
+    request: Request,
+    success: Optional[str] = None,
+    error: Optional[str] = None,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Admin group management."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or (not user.group or not user.group.is_admin):
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    groups_with_counts = await crud.get_all_groups_with_counts(db)
+
+    return templates.TemplateResponse(
+        "admin/groups.html",
+        {
+            "request": request,
+            "user": user,
+            "groups": groups_with_counts,
+            "success": success,
+            "error": error,
+        },
+    )
+
+
+@dashboard_router.post("/admin/groups")
+async def create_group(
+    request: Request,
+    name: str = Form(...),
+    display_name: str = Form(...),
+    description: Optional[str] = Form(None),
+    token_budget: int = Form(100000),
+    rpm_limit: int = Form(30),
+    max_concurrent: int = Form(2),
+    scheduler_weight: int = Form(1),
+    is_admin: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Create a new group."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or (not user.group or not user.group.is_admin):
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    try:
+        existing = await crud.get_group_by_name(db, name)
+        if existing:
+            return RedirectResponse(url="/admin/groups?error=Group+name+already+exists", status_code=302)
+
+        await crud.create_group(
+            db,
+            name=name,
+            display_name=display_name,
+            description=description if description else None,
+            token_budget=token_budget,
+            rpm_limit=rpm_limit,
+            max_concurrent=max_concurrent,
+            scheduler_weight=scheduler_weight,
+            is_admin=(is_admin == "on"),
+        )
+        await db.commit()
+        return RedirectResponse(url="/admin/groups?success=created", status_code=302)
+    except Exception:
+        return RedirectResponse(url="/admin/groups?error=Creation+failed", status_code=302)
+
+
+@dashboard_router.post("/admin/groups/{group_id}/edit")
+async def edit_group(
+    request: Request,
+    group_id: int,
+    display_name: str = Form(...),
+    description: Optional[str] = Form(None),
+    token_budget: int = Form(100000),
+    rpm_limit: int = Form(30),
+    max_concurrent: int = Form(2),
+    scheduler_weight: int = Form(1),
+    is_admin: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Edit a group."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or (not user.group or not user.group.is_admin):
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    try:
+        await crud.update_group(
+            db, group_id,
+            display_name=display_name,
+            description=description if description else None,
+            token_budget=token_budget,
+            rpm_limit=rpm_limit,
+            max_concurrent=max_concurrent,
+            scheduler_weight=scheduler_weight,
+            is_admin=(is_admin == "on"),
+        )
+        await db.commit()
+        return RedirectResponse(url="/admin/groups?success=updated", status_code=302)
+    except Exception as e:
+        error_msg = str(e).replace(" ", "+")
+        return RedirectResponse(url=f"/admin/groups?error={error_msg}", status_code=302)
+
+
+@dashboard_router.post("/admin/groups/{group_id}/delete")
+async def delete_group(
+    request: Request,
+    group_id: int,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Delete a group."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or (not user.group or not user.group.is_admin):
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    deleted = await crud.delete_group(db, group_id)
+    if deleted:
+        await db.commit()
+        return RedirectResponse(url="/admin/groups?success=deleted", status_code=302)
+    else:
+        return RedirectResponse(
+            url="/admin/groups?error=Cannot+delete+group+with+active+users", status_code=302
+        )
+
+
+# User detail route
+@dashboard_router.get("/admin/users/{user_id}", response_class=HTMLResponse)
+async def admin_user_detail(
+    request: Request,
+    user_id: int,
+    success: Optional[str] = None,
+    error: Optional[str] = None,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Admin user detail page."""
+    session_user_id = get_session_user_id(request)
+    if not session_user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    admin_user = await crud.get_user_by_id(db, session_user_id)
+    if not admin_user or (not admin_user.group or not admin_user.group.is_admin):
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    stats = await crud.get_user_with_stats(db, user_id)
+    if not stats:
+        return RedirectResponse(url="/admin/users", status_code=302)
+
+    monthly_usage = await crud.get_user_monthly_usage(db, user_id)
+    groups = await crud.get_all_groups(db)
+
+    return templates.TemplateResponse(
+        "admin/user_detail.html",
+        {
+            "request": request,
+            "user": admin_user,
+            "detail_user": stats["user"],
+            "stats": stats,
+            "monthly_usage": monthly_usage,
+            "groups": groups,
+            "success": success,
+            "error": error,
+        },
+    )
+
+
+@dashboard_router.post("/admin/users/{user_id}/edit")
+async def edit_user(
+    request: Request,
+    user_id: int,
+    group_id: int = Form(...),
+    full_name: Optional[str] = Form(None),
+    college: Optional[str] = Form(None),
+    department: Optional[str] = Form(None),
+    intended_use: Optional[str] = Form(None),
+    token_budget: Optional[int] = Form(None),
+    rpm_limit: Optional[int] = Form(None),
+    max_concurrent: Optional[int] = Form(None),
+    weight_override: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Edit user profile and quota."""
+    session_user_id = get_session_user_id(request)
+    if not session_user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    admin_user = await crud.get_user_by_id(db, session_user_id)
+    if not admin_user or (not admin_user.group or not admin_user.group.is_admin):
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    try:
+        # Update user fields
+        await crud.update_user(
+            db, user_id,
+            group_id=group_id,
+            full_name=full_name if full_name else None,
+            college=college if college else None,
+            department=department if department else None,
+            intended_use=intended_use if intended_use else None,
+        )
+
+        # Update quota if provided
+        quota = await crud.get_user_quota(db, user_id)
+        if quota:
+            if token_budget is not None:
+                quota.token_budget = token_budget
+            if rpm_limit is not None:
+                quota.rpm_limit = rpm_limit
+            if max_concurrent is not None:
+                quota.max_concurrent = max_concurrent
+            quota.weight_override = int(weight_override) if weight_override and weight_override.strip() else None
+            await db.flush()
+
+        await db.commit()
+        return RedirectResponse(url=f"/admin/users/{user_id}?success=updated", status_code=302)
+    except Exception as e:
+        error_msg = str(e).replace(" ", "+")
+        return RedirectResponse(url=f"/admin/users/{user_id}?error={error_msg}", status_code=302)
+
+
+# API Keys listing route
+@dashboard_router.get("/admin/api-keys", response_class=HTMLResponse)
+async def admin_api_keys(
+    request: Request,
+    search: Optional[str] = None,
+    key_status: Optional[str] = None,
+    page: int = 1,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Admin API key listing."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or (not user.group or not user.group.is_admin):
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    per_page = 50
+    skip = (page - 1) * per_page
+    keys, total = await crud.get_all_api_keys(
+        db, skip=skip, limit=per_page, search=search, status_filter=key_status
+    )
+    total_pages = max(1, (total + per_page - 1) // per_page)
+
+    return templates.TemplateResponse(
+        "admin/api_keys.html",
+        {
+            "request": request,
+            "user": user,
+            "api_keys": keys,
+            "total": total,
+            "page": page,
+            "total_pages": total_pages,
+            "search": search or "",
+            "key_status": key_status or "",
+        },
     )

@@ -197,7 +197,37 @@ def mock_model():
 
 
 @pytest.fixture
-def mock_user():
+def mock_group():
+    """Create a mock group for testing."""
+    group = MagicMock()
+    group.id = 3
+    group.name = "faculty"
+    group.display_name = "Faculty"
+    group.token_budget = 1000000
+    group.rpm_limit = 120
+    group.max_concurrent = 8
+    group.scheduler_weight = 3
+    group.is_admin = False
+    return group
+
+
+@pytest.fixture
+def mock_admin_group():
+    """Create a mock admin group for testing."""
+    group = MagicMock()
+    group.id = 5
+    group.name = "admin"
+    group.display_name = "Admin"
+    group.token_budget = 10000000
+    group.rpm_limit = 1000
+    group.max_concurrent = 50
+    group.scheduler_weight = 10
+    group.is_admin = True
+    return group
+
+
+@pytest.fixture
+def mock_user(mock_group):
     """Create a mock user for testing."""
     from backend.app.db.models import User, UserRole
 
@@ -209,6 +239,8 @@ def mock_user():
     user.role = UserRole.FACULTY
     user.is_active = True
     user.created_at = datetime.now(timezone.utc)
+    user.group_id = mock_group.id
+    user.group = mock_group
 
     return user
 

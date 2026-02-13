@@ -31,6 +31,7 @@ from backend.app.db.models import (
     BackendTelemetry,
     GPUDevice,
     GPUDeviceTelemetry,
+    Group,
     Model,
     Modality,
     Node,
@@ -55,16 +56,108 @@ def _ensure_aware(dt: Optional[datetime]) -> Optional[datetime]:
     return dt
 
 
+# Group CRUD
+async def create_group(
+    db: AsyncSession,
+    name: str,
+    display_name: str,
+    description: Optional[str] = None,
+    token_budget: int = 100000,
+    rpm_limit: int = 30,
+    max_concurrent: int = 2,
+    scheduler_weight: int = 1,
+    is_admin: bool = False,
+) -> Group:
+    """Create a new group."""
+    group = Group(
+        name=name,
+        display_name=display_name,
+        description=description,
+        token_budget=token_budget,
+        rpm_limit=rpm_limit,
+        max_concurrent=max_concurrent,
+        scheduler_weight=scheduler_weight,
+        is_admin=is_admin,
+    )
+    db.add(group)
+    await db.flush()
+    return group
+
+
+async def get_group_by_id(db: AsyncSession, group_id: int) -> Optional[Group]:
+    """Get group by ID."""
+    result = await db.execute(select(Group).where(Group.id == group_id))
+    return result.scalar_one_or_none()
+
+
+async def get_group_by_name(db: AsyncSession, name: str) -> Optional[Group]:
+    """Get group by name."""
+    result = await db.execute(select(Group).where(Group.name == name))
+    return result.scalar_one_or_none()
+
+
+async def get_all_groups(db: AsyncSession) -> List[Group]:
+    """Get all groups."""
+    result = await db.execute(select(Group).order_by(Group.name))
+    return list(result.scalars().all())
+
+
+async def get_all_groups_with_counts(db: AsyncSession) -> List[Tuple[Group, int]]:
+    """Get all groups with user counts."""
+    result = await db.execute(
+        select(Group, func.count(User.id).label("user_count"))
+        .outerjoin(User, and_(User.group_id == Group.id, User.deleted_at.is_(None)))
+        .group_by(Group.id)
+        .order_by(Group.name)
+    )
+    return [(row[0], row[1]) for row in result.all()]
+
+
+async def update_group(db: AsyncSession, group_id: int, **kwargs) -> Optional[Group]:
+    """Update a group's fields."""
+    result = await db.execute(select(Group).where(Group.id == group_id))
+    group = result.scalar_one_or_none()
+    if not group:
+        return None
+    for key, value in kwargs.items():
+        if hasattr(group, key):
+            setattr(group, key, value)
+    await db.flush()
+    return group
+
+
+async def delete_group(db: AsyncSession, group_id: int) -> bool:
+    """Delete a group. Fails if users are assigned to it."""
+    # Check for users in this group
+    result = await db.execute(
+        select(User).where(and_(User.group_id == group_id, User.deleted_at.is_(None))).limit(1)
+    )
+    if result.scalar_one_or_none():
+        return False
+
+    result = await db.execute(select(Group).where(Group.id == group_id))
+    group = result.scalar_one_or_none()
+    if group:
+        await db.delete(group)
+        await db.flush()
+        return True
+    return False
+
+
 # User CRUD
 async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[User]:
-    """Get user by ID."""
-    result = await db.execute(select(User).where(User.id == user_id))
+    """Get user by ID with group eagerly loaded."""
+    result = await db.execute(
+        select(User).options(selectinload(User.group)).where(User.id == user_id)
+    )
     return result.scalar_one_or_none()
 
 
 async def get_user_by_username(db: AsyncSession, username: str) -> Optional[User]:
-    """Get user by username."""
-    result = await db.execute(select(User).where(User.username == username))
+    """Get user by username with group eagerly loaded."""
+    result = await db.execute(
+        select(User).options(selectinload(User.group)).where(User.username == username)
+    )
     return result.scalar_one_or_none()
 
 
@@ -81,6 +174,10 @@ async def create_user(
     password_hash: str,
     role: UserRole = UserRole.STUDENT,
     full_name: Optional[str] = None,
+    group_id: Optional[int] = None,
+    college: Optional[str] = None,
+    department: Optional[str] = None,
+    intended_use: Optional[str] = None,
 ) -> User:
     """Create a new user."""
     user = User(
@@ -89,6 +186,10 @@ async def create_user(
         password_hash=password_hash,
         role=role,
         full_name=full_name,
+        group_id=group_id,
+        college=college,
+        department=department,
+        intended_use=intended_use,
     )
     db.add(user)
     await db.flush()
@@ -100,17 +201,45 @@ async def get_users(
     skip: int = 0,
     limit: int = 100,
     role: Optional[UserRole] = None,
+    group_id: Optional[int] = None,
     is_active: Optional[bool] = None,
-) -> List[User]:
-    """Get list of users with optional filtering."""
-    query = select(User).where(User.deleted_at.is_(None))
+    search: Optional[str] = None,
+) -> Tuple[List[User], int]:
+    """Get list of users with optional filtering. Returns (users, total_count)."""
+    conditions = [User.deleted_at.is_(None)]
     if role:
-        query = query.where(User.role == role)
+        conditions.append(User.role == role)
+    if group_id is not None:
+        conditions.append(User.group_id == group_id)
     if is_active is not None:
-        query = query.where(User.is_active == is_active)
-    query = query.offset(skip).limit(limit)
+        conditions.append(User.is_active == is_active)
+    if search:
+        search_pattern = f"%{search}%"
+        conditions.append(
+            or_(
+                User.username.ilike(search_pattern),
+                User.email.ilike(search_pattern),
+                User.full_name.ilike(search_pattern),
+            )
+        )
+
+    where_clause = and_(*conditions)
+
+    # Total count
+    count_result = await db.execute(select(func.count(User.id)).where(where_clause))
+    total = count_result.scalar_one()
+
+    # Paginated results with group eager-loaded
+    query = (
+        select(User)
+        .options(selectinload(User.group))
+        .where(where_clause)
+        .order_by(User.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+    )
     result = await db.execute(query)
-    return list(result.scalars().all())
+    return list(result.scalars().all()), total
 
 
 async def delete_user(db: AsyncSession, user_id: int) -> bool:
@@ -174,10 +303,10 @@ async def delete_user(db: AsyncSession, user_id: int) -> bool:
 
 # API Key CRUD
 async def get_api_key_by_hash(db: AsyncSession, key_hash: str) -> Optional[ApiKey]:
-    """Get API key by hash."""
+    """Get API key by hash with user and group eagerly loaded."""
     result = await db.execute(
         select(ApiKey)
-        .options(selectinload(ApiKey.user))
+        .options(selectinload(ApiKey.user).selectinload(User.group))
         .where(ApiKey.key_hash == key_hash)
     )
     return result.scalar_one_or_none()
@@ -1473,3 +1602,139 @@ async def search_requests(
     requests = list(result.scalars().all())
 
     return requests, total
+
+
+# User stats/detail queries
+async def get_user_with_stats(db: AsyncSession, user_id: int) -> Optional[dict]:
+    """Get user with usage statistics."""
+    user = await get_user_by_id(db, user_id)
+    if not user:
+        return None
+
+    # Total tokens
+    token_result = await db.execute(
+        select(func.coalesce(func.sum(UsageLedger.total_tokens), 0))
+        .where(UsageLedger.user_id == user_id)
+    )
+    total_tokens = token_result.scalar_one()
+
+    # Request count
+    req_result = await db.execute(
+        select(func.count(Request.id)).where(Request.user_id == user_id)
+    )
+    request_count = req_result.scalar_one()
+
+    # Favorite models (top 5)
+    model_result = await db.execute(
+        select(Request.model, func.count(Request.id).label("cnt"))
+        .where(Request.user_id == user_id)
+        .group_by(Request.model)
+        .order_by(func.count(Request.id).desc())
+        .limit(5)
+    )
+    favorite_models = [(row[0], row[1]) for row in model_result.all()]
+
+    # API key count
+    key_result = await db.execute(
+        select(func.count(ApiKey.id)).where(ApiKey.user_id == user_id)
+    )
+    api_key_count = key_result.scalar_one()
+
+    # Quota
+    quota = await get_user_quota(db, user_id)
+
+    # API keys
+    api_keys = await get_user_api_keys(db, user_id, include_revoked=True)
+
+    return {
+        "user": user,
+        "total_tokens": total_tokens,
+        "request_count": request_count,
+        "favorite_models": favorite_models,
+        "api_key_count": api_key_count,
+        "quota": quota,
+        "api_keys": api_keys,
+    }
+
+
+async def get_user_monthly_usage(
+    db: AsyncSession, user_id: int, months: int = 12
+) -> List[dict]:
+    """Get monthly token usage for a user."""
+    from sqlalchemy import text
+
+    query = text("""
+        SELECT
+            DATE_FORMAT(created_at, '%Y-%m') as month,
+            SUM(total_tokens) as tokens,
+            COUNT(*) as requests
+        FROM usage_ledger
+        WHERE user_id = :user_id
+          AND created_at >= DATE_SUB(NOW(), INTERVAL :months MONTH)
+        GROUP BY month
+        ORDER BY month
+    """)
+    result = await db.execute(query, {"user_id": user_id, "months": months})
+    return [
+        {"month": row[0], "tokens": int(row[1]), "requests": int(row[2])}
+        for row in result.all()
+    ]
+
+
+async def get_all_api_keys(
+    db: AsyncSession,
+    skip: int = 0,
+    limit: int = 100,
+    search: Optional[str] = None,
+    status_filter: Optional[str] = None,
+) -> Tuple[List[ApiKey], int]:
+    """Get all API keys with user info, paginated."""
+    conditions = []
+    if search:
+        search_pattern = f"%{search}%"
+        conditions.append(
+            or_(
+                ApiKey.name.ilike(search_pattern),
+                ApiKey.key_prefix.ilike(search_pattern),
+                User.username.ilike(search_pattern),
+                User.email.ilike(search_pattern),
+            )
+        )
+    if status_filter:
+        conditions.append(ApiKey.status == ApiKeyStatus(status_filter))
+
+    base_query = select(ApiKey).join(User, ApiKey.user_id == User.id)
+    count_query = select(func.count(ApiKey.id)).join(User, ApiKey.user_id == User.id)
+
+    if conditions:
+        where_clause = and_(*conditions)
+        base_query = base_query.where(where_clause)
+        count_query = count_query.where(where_clause)
+
+    count_result = await db.execute(count_query)
+    total = count_result.scalar_one()
+
+    query = (
+        base_query
+        .options(selectinload(ApiKey.user))
+        .order_by(ApiKey.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    result = await db.execute(query)
+    return list(result.scalars().all()), total
+
+
+async def update_user(db: AsyncSession, user_id: int, **kwargs) -> Optional[User]:
+    """Update user fields."""
+    result = await db.execute(
+        select(User).options(selectinload(User.group)).where(User.id == user_id)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        return None
+    for key, value in kwargs.items():
+        if hasattr(user, key):
+            setattr(user, key, value)
+    await db.flush()
+    return user

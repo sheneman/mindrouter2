@@ -5,50 +5,8 @@
 {% block content %}
 <div class="container-fluid py-4">
     <div class="row">
-        <!-- Sidebar -->
-        <div class="col-md-2 sidebar bg-light py-3">
-            <h6 class="px-3 text-muted">Admin Menu</h6>
-            <ul class="nav flex-column" role="navigation" aria-label="Admin navigation">
-                <li class="nav-item">
-                    <a class="nav-link active" href="/admin" aria-current="page">
-                        <i class="bi bi-speedometer2"></i> Overview
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="/admin/backends">
-                        <i class="bi bi-server"></i> Backends
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="/admin/nodes">
-                        <i class="bi bi-hdd-rack"></i> Nodes
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="/admin/metrics">
-                        <i class="bi bi-gpu-card"></i> GPU Metrics
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="/admin/users">
-                        <i class="bi bi-people"></i> Users
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="/admin/requests">
-                        <i class="bi bi-inbox"></i> Requests
-                        {% if pending_requests %}
-                        <span class="badge bg-danger">{{ pending_requests|length }}</span>
-                        {% endif %}
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="/admin/audit">
-                        <i class="bi bi-journal-text"></i> Audit Log
-                    </a>
-                </li>
-            </ul>
-        </div>
+        {% set active = "overview" %}
+        {% include "admin/_sidebar.html" %}
 
         <!-- Main Content -->
         <div class="col-md-10 py-3">

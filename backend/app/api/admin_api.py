@@ -25,7 +25,7 @@ from backend.app.api.auth import require_admin
 from backend.app.core.scheduler.policy import get_scheduler
 from backend.app.core.telemetry.registry import get_registry
 from backend.app.db import crud
-from backend.app.db.models import BackendEngine, BackendStatus, RequestStatus, User, UserRole
+from backend.app.db.models import BackendEngine, BackendStatus, Group, RequestStatus, User, UserRole
 from backend.app.db.session import get_async_db
 from backend.app.logging_config import get_logger
 from backend.app.security.api_keys import generate_api_key
@@ -728,19 +728,20 @@ async def get_audit_detail(
 # User Management
 @router.get("/users")
 async def list_users(
-    role: Optional[str] = Query(None),
+    group_id: Optional[int] = Query(None),
+    search: Optional[str] = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     admin: User = Depends(require_admin()),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """List all users."""
-    from backend.app.db.models import UserRole
-
-    role_filter = UserRole(role) if role else None
-    users = await crud.get_users(db, skip=skip, limit=limit, role=role_filter)
+    """List all users with optional group filter and search."""
+    users, total = await crud.get_users(db, skip=skip, limit=limit, group_id=group_id, search=search)
 
     return {
+        "total": total,
+        "skip": skip,
+        "limit": limit,
         "users": [
             {
                 "id": u.id,
@@ -749,12 +750,14 @@ async def list_users(
                 "email": u.email,
                 "full_name": u.full_name,
                 "role": u.role.value,
+                "group_id": u.group_id,
+                "group_name": u.group.display_name if u.group else None,
                 "is_active": u.is_active,
                 "created_at": u.created_at.isoformat(),
                 "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
             }
             for u in users
-        ]
+        ],
     }
 
 
@@ -843,8 +846,12 @@ class CreateUserRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=100)
     email: str = Field(..., min_length=3, max_length=255)
     password: str = Field(..., min_length=8)
-    role: UserRole = UserRole.STUDENT
+    group_id: int
+    role: UserRole = UserRole.STUDENT  # kept for backward compat during migration
     full_name: Optional[str] = None
+    college: Optional[str] = None
+    department: Optional[str] = None
+    intended_use: Optional[str] = None
 
 
 class CreateUserResponse(BaseModel):
@@ -854,6 +861,8 @@ class CreateUserResponse(BaseModel):
     username: str
     email: str
     role: str
+    group_id: int
+    group_name: Optional[str] = None
     full_name: Optional[str]
     is_active: bool
 
@@ -878,7 +887,15 @@ async def create_user(
     admin: User = Depends(require_admin()),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """Create a new user with quota defaults for their role."""
+    """Create a new user with quota defaults from their group."""
+    # Validate group exists
+    group = await crud.get_group_by_id(db, request.group_id)
+    if not group:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Group with id {request.group_id} not found",
+        )
+
     # Check for duplicate username
     existing = await crud.get_user_by_username(db, request.username)
     if existing:
@@ -904,17 +921,19 @@ async def create_user(
         password_hash=pw_hash,
         role=request.role,
         full_name=request.full_name,
+        group_id=request.group_id,
+        college=request.college,
+        department=request.department,
+        intended_use=request.intended_use,
     )
 
-    # Create quota with role-based defaults
-    settings = get_settings()
-    defaults = settings.get_quota_defaults(request.role.value)
+    # Create quota with group defaults
     await crud.create_quota(
         db,
         user_id=user.id,
-        token_budget=defaults["token_budget"],
-        rpm_limit=defaults["rpm"],
-        max_concurrent=defaults["max_concurrent"],
+        token_budget=group.token_budget,
+        rpm_limit=group.rpm_limit,
+        max_concurrent=group.max_concurrent,
     )
 
     await db.commit()
@@ -924,7 +943,7 @@ async def create_user(
         admin_id=admin.id,
         user_id=user.id,
         username=user.username,
-        role=user.role.value,
+        group=group.name,
     )
 
     return CreateUserResponse(
@@ -933,6 +952,8 @@ async def create_user(
         username=user.username,
         email=user.email,
         role=user.role.value,
+        group_id=group.id,
+        group_name=group.display_name,
         full_name=user.full_name,
         is_active=user.is_active,
     )
@@ -1024,3 +1045,284 @@ async def delete_user(
     )
 
     return {"status": "deleted", "user_id": user_id}
+
+
+# User Detail
+@router.get("/users/{user_id}")
+async def get_user_detail(
+    user_id: int,
+    admin: User = Depends(require_admin()),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Get full user profile with usage stats, API keys, and monthly usage."""
+    stats = await crud.get_user_with_stats(db, user_id)
+    if not stats:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    user = stats["user"]
+    monthly_usage = await crud.get_user_monthly_usage(db, user_id)
+
+    return {
+        "user": {
+            "id": user.id,
+            "uuid": user.uuid,
+            "username": user.username,
+            "email": user.email,
+            "full_name": user.full_name,
+            "role": user.role.value,
+            "group_id": user.group_id,
+            "group_name": user.group.display_name if user.group else None,
+            "college": user.college,
+            "department": user.department,
+            "intended_use": user.intended_use,
+            "is_active": user.is_active,
+            "created_at": user.created_at.isoformat(),
+            "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
+        },
+        "stats": {
+            "total_tokens": stats["total_tokens"],
+            "request_count": stats["request_count"],
+            "favorite_models": [{"model": m, "count": c} for m, c in stats["favorite_models"]],
+            "api_key_count": stats["api_key_count"],
+        },
+        "quota": {
+            "token_budget": stats["quota"].token_budget,
+            "tokens_used": stats["quota"].tokens_used,
+            "rpm_limit": stats["quota"].rpm_limit,
+            "max_concurrent": stats["quota"].max_concurrent,
+            "weight_override": stats["quota"].weight_override,
+        } if stats["quota"] else None,
+        "api_keys": [
+            {
+                "id": k.id,
+                "key_prefix": k.key_prefix,
+                "name": k.name,
+                "status": k.status.value,
+                "last_used_at": k.last_used_at.isoformat() if k.last_used_at else None,
+                "usage_count": k.usage_count,
+                "created_at": k.created_at.isoformat(),
+            }
+            for k in stats["api_keys"]
+        ],
+        "monthly_usage": monthly_usage,
+    }
+
+
+class UpdateUserRequest(BaseModel):
+    """Request to update a user's profile."""
+    group_id: Optional[int] = None
+    full_name: Optional[str] = None
+    college: Optional[str] = None
+    department: Optional[str] = None
+    intended_use: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+@router.patch("/users/{user_id}")
+async def update_user(
+    user_id: int,
+    request: UpdateUserRequest,
+    admin: User = Depends(require_admin()),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Update user profile, group, or status."""
+    user = await crud.get_user_by_id(db, user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    updates = request.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No fields to update",
+        )
+
+    # Validate group if changing
+    if "group_id" in updates and updates["group_id"] is not None:
+        group = await crud.get_group_by_id(db, updates["group_id"])
+        if not group:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Group with id {updates['group_id']} not found",
+            )
+
+    updated = await crud.update_user(db, user_id, **updates)
+    await db.commit()
+
+    return {"status": "updated", "user_id": user_id}
+
+
+# Group Management
+class CreateGroupRequest(BaseModel):
+    """Request to create a group."""
+    name: str = Field(..., min_length=1, max_length=50)
+    display_name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = None
+    token_budget: int = Field(default=100000, ge=0)
+    rpm_limit: int = Field(default=30, ge=1)
+    max_concurrent: int = Field(default=2, ge=1)
+    scheduler_weight: int = Field(default=1, ge=1)
+    is_admin: bool = False
+
+
+class UpdateGroupRequest(BaseModel):
+    """Request to update a group."""
+    display_name: Optional[str] = None
+    description: Optional[str] = None
+    token_budget: Optional[int] = Field(None, ge=0)
+    rpm_limit: Optional[int] = Field(None, ge=1)
+    max_concurrent: Optional[int] = Field(None, ge=1)
+    scheduler_weight: Optional[int] = Field(None, ge=1)
+    is_admin: Optional[bool] = None
+
+
+@router.get("/groups")
+async def list_groups(
+    admin: User = Depends(require_admin()),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """List all groups with user counts."""
+    groups_with_counts = await crud.get_all_groups_with_counts(db)
+    return {
+        "groups": [
+            {
+                "id": g.id,
+                "name": g.name,
+                "display_name": g.display_name,
+                "description": g.description,
+                "token_budget": g.token_budget,
+                "rpm_limit": g.rpm_limit,
+                "max_concurrent": g.max_concurrent,
+                "scheduler_weight": g.scheduler_weight,
+                "is_admin": g.is_admin,
+                "user_count": count,
+            }
+            for g, count in groups_with_counts
+        ],
+    }
+
+
+@router.post("/groups")
+async def create_group(
+    request: CreateGroupRequest,
+    admin: User = Depends(require_admin()),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Create a new group."""
+    existing = await crud.get_group_by_name(db, request.name)
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Group with name '{request.name}' already exists",
+        )
+
+    group = await crud.create_group(
+        db,
+        name=request.name,
+        display_name=request.display_name,
+        description=request.description,
+        token_budget=request.token_budget,
+        rpm_limit=request.rpm_limit,
+        max_concurrent=request.max_concurrent,
+        scheduler_weight=request.scheduler_weight,
+        is_admin=request.is_admin,
+    )
+    await db.commit()
+
+    logger.info("group_created", admin_id=admin.id, group_id=group.id, name=group.name)
+
+    return {
+        "id": group.id,
+        "name": group.name,
+        "display_name": group.display_name,
+    }
+
+
+@router.patch("/groups/{group_id}")
+async def update_group(
+    group_id: int,
+    request: UpdateGroupRequest,
+    admin: User = Depends(require_admin()),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Update group defaults."""
+    updates = request.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No fields to update",
+        )
+
+    group = await crud.update_group(db, group_id, **updates)
+    if not group:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Group not found",
+        )
+    await db.commit()
+
+    logger.info("group_updated", admin_id=admin.id, group_id=group_id, fields=list(updates.keys()))
+
+    return {"status": "updated", "group_id": group_id}
+
+
+@router.delete("/groups/{group_id}")
+async def delete_group(
+    group_id: int,
+    admin: User = Depends(require_admin()),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Delete a group (fails if users are assigned)."""
+    deleted = await crud.delete_group(db, group_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot delete group with active users. Reassign users first.",
+        )
+    await db.commit()
+
+    logger.info("group_deleted", admin_id=admin.id, group_id=group_id)
+
+    return {"status": "deleted", "group_id": group_id}
+
+
+# API Keys listing
+@router.get("/api-keys")
+async def list_api_keys(
+    search: Optional[str] = Query(None),
+    key_status: Optional[str] = Query(None, alias="status"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    admin: User = Depends(require_admin()),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """List all API keys with user info."""
+    keys, total = await crud.get_all_api_keys(
+        db, skip=skip, limit=limit, search=search, status_filter=key_status
+    )
+
+    return {
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "api_keys": [
+            {
+                "id": k.id,
+                "key_prefix": k.key_prefix,
+                "name": k.name,
+                "status": k.status.value,
+                "user_id": k.user_id,
+                "username": k.user.username if k.user else None,
+                "last_used_at": k.last_used_at.isoformat() if k.last_used_at else None,
+                "usage_count": k.usage_count,
+                "created_at": k.created_at.isoformat(),
+            }
+            for k in keys
+        ],
+    }

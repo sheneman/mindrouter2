@@ -22,7 +22,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.db import crud
-from backend.app.db.models import ApiKey, ApiKeyStatus, User, UserRole
+from backend.app.db.models import ApiKey, ApiKeyStatus, User, UserRole, Group
 from backend.app.db.session import get_async_db
 from backend.app.security.api_keys import verify_api_key
 from backend.app.logging_config import get_logger
@@ -167,12 +167,12 @@ async def require_role(
 
 
 def require_admin():
-    """Dependency that requires admin role."""
+    """Dependency that requires admin role (via group.is_admin)."""
     async def check_admin(
         auth_result: Tuple[User, ApiKey] = Depends(authenticate_request),
     ) -> User:
         user, _ = auth_result
-        if user.role != UserRole.ADMIN:
+        if not user.group or not user.group.is_admin:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Admin access required",
@@ -207,7 +207,7 @@ def require_admin_or_session():
             api_key = await _verify(db, api_key_str)
             if api_key and api_key.status == ApiKeyStatus.ACTIVE:
                 user = api_key.user
-                if user and user.is_active and user.role == UserRole.ADMIN:
+                if user and user.is_active and user.group and user.group.is_admin:
                     return user
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -220,7 +220,7 @@ def require_admin_or_session():
             try:
                 user_id = int(session_data)
                 user = await crud.get_user_by_id(db, user_id)
-                if user and user.is_active and user.role == UserRole.ADMIN:
+                if user and user.is_active and user.group and user.group.is_admin:
                     return user
             except (ValueError, TypeError):
                 pass
@@ -235,7 +235,8 @@ def require_admin_or_session():
 class AuthenticatedUser:
     """Dependency class for getting authenticated user."""
 
-    def __init__(self, require_role: Optional[UserRole] = None):
+    def __init__(self, require_admin: bool = False, require_role: Optional[UserRole] = None):
+        self.require_admin_flag = require_admin
         self.require_role = require_role
 
     async def __call__(
@@ -244,7 +245,14 @@ class AuthenticatedUser:
     ) -> User:
         user, _ = auth_result
 
-        if self.require_role:
+        if self.require_admin_flag:
+            if not user.group or not user.group.is_admin:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Admin access required",
+                )
+        elif self.require_role:
+            # Legacy role hierarchy check (kept for backward compat)
             role_hierarchy = {
                 UserRole.STUDENT: 0,
                 UserRole.STAFF: 1,
@@ -276,5 +284,5 @@ class AuthenticatedApiKey:
 
 # Convenience dependencies
 get_current_user = AuthenticatedUser()
-get_current_user_admin = AuthenticatedUser(require_role=UserRole.ADMIN)
+get_current_user_admin = AuthenticatedUser(require_admin=True)
 get_current_api_key = AuthenticatedApiKey()

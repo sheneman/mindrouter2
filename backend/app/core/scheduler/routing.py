@@ -91,27 +91,29 @@ class BackendRouter:
     async def submit_job(
         self,
         job: Job,
-        user_role: str,
+        user_role: str = "",
+        user_weight: float = 1.0,
     ) -> int:
         """
         Submit a job to the queue.
 
         Args:
             job: The job to submit
-            user_role: User's role for fair-share weighting
+            user_role: User's role (deprecated, kept for backward compat)
+            user_weight: Direct weight from group.scheduler_weight
 
         Returns:
             Queue position
         """
         # Register user with fair-share manager
-        await self.fair_share.register_user(job.user_id, user_role)
+        await self.fair_share.register_user(job.user_id, role=user_role, weight=user_weight)
 
         # Compute initial priority
-        priority = await self.fair_share.compute_priority(job, user_role)
+        priority = await self.fair_share.compute_priority(job, role=user_role, weight=user_weight)
         job.priority = priority
 
         # Notify fair-share of new job
-        await self.fair_share.on_job_queued(job, user_role)
+        await self.fair_share.on_job_queued(job, role=user_role, weight=user_weight)
 
         # Enqueue
         position = await self.queue.enqueue(job)

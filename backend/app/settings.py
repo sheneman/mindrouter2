@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     artifact_max_size_mb: int = 50
     artifact_retention_days: int = 365
 
-    # Default Quotas - Students
+    # Default Quotas - per role (deprecated: use Group DB defaults instead)
     default_token_budget_student: int = 100000
     default_rpm_student: int = 30
     default_max_concurrent_student: int = 2
@@ -83,7 +83,7 @@ class Settings(BaseSettings):
     default_rpm_admin: int = 1000
     default_max_concurrent_admin: int = 50
 
-    # Scheduler Weights
+    # Scheduler Weights (deprecated: use Group.scheduler_weight instead)
     scheduler_weight_student: int = 1
     scheduler_weight_staff: int = 2
     scheduler_weight_faculty: int = 3

@@ -384,6 +384,9 @@ ADMIN_TEMPLATES = [
     "admin/dashboard.html",
     "admin/backends.html",
     "admin/users.html",
+    "admin/user_detail.html",
+    "admin/groups.html",
+    "admin/api_keys.html",
     "admin/requests.html",
     "admin/audit.html",
     "admin/nodes.html",
@@ -391,33 +394,36 @@ ADMIN_TEMPLATES = [
 ]
 
 
-@pytest.mark.parametrize("template_path", ADMIN_TEMPLATES)
 class TestAdminSidebarNav:
-    """Tests for admin sidebar navigation across all admin pages."""
+    """Tests for admin sidebar navigation (shared include)."""
 
-    def test_sidebar_nav_has_aria_label(self, template_path):
-        html = _read_template(template_path)
+    def test_sidebar_include_has_aria_label(self):
+        """The shared _sidebar.html include has aria-label on the nav list."""
+        html = _read_template("admin/_sidebar.html")
         tags = _parse_tags(html)
         nav_lists = [
             t for t in _find_tags(tags, "ul")
             if "nav" in _classes(t) and "flex-column" in _classes(t)
         ]
-        assert nav_lists, f"No sidebar nav <ul> found in {template_path}"
+        assert nav_lists, "No sidebar nav <ul> found in admin/_sidebar.html"
         assert nav_lists[0]["attrs"].get("aria-label"), (
-            f"Sidebar nav missing aria-label in {template_path}"
+            "Sidebar nav missing aria-label in admin/_sidebar.html"
         )
 
-    def test_active_link_has_aria_current(self, template_path):
+    def test_sidebar_links_have_conditional_aria_current(self):
+        """Each sidebar link has conditional aria-current='page'."""
+        html = _read_template("admin/_sidebar.html")
+        # Check that aria-current="page" appears in Jinja conditionals
+        assert 'aria-current="page"' in html, (
+            "Sidebar links missing aria-current='page' in admin/_sidebar.html"
+        )
+
+    @pytest.mark.parametrize("template_path", ADMIN_TEMPLATES)
+    def test_admin_templates_include_sidebar(self, template_path):
+        """Each admin template includes the shared sidebar."""
         html = _read_template(template_path)
-        tags = _parse_tags(html)
-        active_links = _find_by_class(tags, "active")
-        nav_active = [
-            t for t in active_links
-            if t["tag"] == "a" and "nav-link" in _classes(t)
-        ]
-        assert nav_active, f"No active nav-link found in {template_path}"
-        assert nav_active[0]["attrs"].get("aria-current") == "page", (
-            f"Active nav-link missing aria-current='page' in {template_path}"
+        assert 'include "admin/_sidebar.html"' in html, (
+            f"{template_path} does not include admin/_sidebar.html"
         )
 
 
@@ -426,6 +432,8 @@ class TestAdminSidebarNav:
 TEMPLATES_WITH_TABLES = [
     "admin/dashboard.html",
     "admin/users.html",
+    "admin/user_detail.html",
+    "admin/api_keys.html",
     "admin/audit.html",
     "user/dashboard.html",
 ]

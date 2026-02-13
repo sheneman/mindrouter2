@@ -15,9 +15,9 @@
         <div class="col-md-4 mb-3">
             <div class="card card-stat primary h-100">
                 <div class="card-body">
-                    <h2 class="card-subtitle mb-2 text-muted h6">Role</h2>
+                    <h2 class="card-subtitle mb-2 text-muted h6">Group</h2>
                     <p class="card-title h3 mb-0">
-                        <span class="badge bg-primary">{{ user.role.value|title }}</span>
+                        <span class="badge bg-primary">{{ user.group.display_name if user.group else user.role.value|title }}</span>
                     </p>
                 </div>
             </div>
