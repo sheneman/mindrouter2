@@ -187,14 +187,40 @@ class UserProvisioner:
         )
         headers = {"Authorization": f"Bearer {self.admin_key}"}
 
+        # Fetch groups to map role names to group IDs
+        groups_resp = await self._client.get("/api/admin/groups", headers=headers)
+        if groups_resp.status_code != 200:
+            raise RuntimeError(f"Failed to fetch groups: {groups_resp.status_code} {groups_resp.text[:200]}")
+        groups = groups_resp.json().get("groups", [])
+        # Map: role name -> group_id (try exact match, then plural, then fallback)
+        role_to_group: Dict[str, int] = {}
+        for g in groups:
+            role_to_group[g["name"].lower()] = g["id"]
+        def _resolve_group_id(role: str) -> int:
+            r = role.lower()
+            if r in role_to_group:
+                return role_to_group[r]
+            # Try plural/singular variants
+            if r + "s" in role_to_group:
+                return role_to_group[r + "s"]
+            if r.rstrip("s") in role_to_group:
+                return role_to_group[r.rstrip("s")]
+            # Fallback to first non-admin group, or first group
+            for g in groups:
+                if not g.get("is_admin"):
+                    return g["id"]
+            return groups[0]["id"]
+
         for spec in self.user_specs:
             # Create user
             password = "StressTest_" + "".join(random.choices(string.ascii_letters + string.digits, k=12))
+            group_id = _resolve_group_id(spec["role"])
             resp = await self._client.post("/api/admin/users", headers=headers, json={
                 "username": spec["username"],
                 "email": spec["email"],
                 "password": password,
                 "role": spec["role"],
+                "group_id": group_id,
                 "full_name": f"Stress Test {spec['role'].title()}",
             })
             if resp.status_code == 409:
@@ -213,6 +239,7 @@ class UserProvisioner:
                     "email": spec["email"],
                     "password": password,
                     "role": spec["role"],
+                    "group_id": group_id,
                     "full_name": f"Stress Test {spec['role'].title()}",
                 })
 
