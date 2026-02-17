@@ -1157,6 +1157,7 @@
         try {
             const res = await fetch('/chat/api/models');
             const data = await res.json();
+            const currentValue = modelSelect.value;
             modelSelect.innerHTML = '';
             modelCapabilities = {};
             if (data.models && data.models.length) {
@@ -1172,17 +1173,25 @@
                     }
                     modelSelect.appendChild(opt);
                 });
+                // Restore selection: current value > localStorage > first option
                 const lastModel = localStorage.getItem('mindrouter_last_model');
-                if (lastModel && modelSelect.querySelector(`option[value="${CSS.escape(lastModel)}"]`)) {
-                    modelSelect.value = lastModel;
+                const preferred = currentValue || lastModel;
+                if (preferred && modelSelect.querySelector(`option[value="${CSS.escape(preferred)}"]`)) {
+                    modelSelect.value = preferred;
                 }
             } else {
                 modelSelect.innerHTML = '<option value="">No models available</option>';
             }
         } catch (e) {
-            modelSelect.innerHTML = '<option value="">Failed to load models</option>';
+            // Only show error if dropdown is empty (don't overwrite valid list on transient failure)
+            if (!modelSelect.options.length || !modelSelect.value) {
+                modelSelect.innerHTML = '<option value="">Failed to load models</option>';
+            }
         }
     }
+
+    // Refresh model list every 30 seconds to pick up backend changes
+    setInterval(loadModels, 30000);
 
     function currentModelSupportsVision() {
         const caps = modelCapabilities[modelSelect.value];

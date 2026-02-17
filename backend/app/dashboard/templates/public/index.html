@@ -16,7 +16,7 @@
             <div class="card card-stat success h-100">
                 <div class="card-body">
                     <h2 class="card-subtitle mb-2 text-muted h6">Healthy Backends</h2>
-                    <p class="card-title mb-0 h2">{{ healthy_backends }} / {{ total_backends }}</p>
+                    <p class="card-title mb-0 h2" id="stat-backends">{{ healthy_backends }} / {{ total_backends }}</p>
                 </div>
             </div>
         </div>
@@ -24,7 +24,7 @@
             <div class="card card-stat primary h-100">
                 <div class="card-body">
                     <h2 class="card-subtitle mb-2 text-muted h6">Available Models</h2>
-                    <p class="card-title mb-0 h2">{{ models|length }}</p>
+                    <p class="card-title mb-0 h2" id="stat-models-count">{{ models|length }}</p>
                 </div>
             </div>
         </div>
@@ -32,7 +32,7 @@
             <div class="card card-stat warning h-100">
                 <div class="card-body">
                     <h2 class="card-subtitle mb-2 text-muted h6">Queue Size</h2>
-                    <p class="card-title mb-0 h2">{{ queue_size }}</p>
+                    <p class="card-title mb-0 h2" id="stat-queue">{{ queue_size }}</p>
                 </div>
             </div>
         </div>
@@ -91,7 +91,7 @@
                 <div class="card-header">
                     <i class="bi bi-cpu"></i> Available Models
                 </div>
-                <div class="card-body">
+                <div class="card-body" id="models-grid">
                     {% if models %}
                     <div class="row">
                         {% for model in models %}
@@ -464,6 +464,40 @@
     window.addEventListener('resize', resize);
     resize();
     requestAnimationFrame(animate);
+
+    // Auto-refresh cluster stats and model list every 30 seconds
+    async function refreshDashboard() {
+        try {
+            const [statusRes, modelsRes] = await Promise.all([
+                fetch('/status'),
+                fetch('/chat/api/models'),
+            ]);
+            if (statusRes.ok) {
+                const status = await statusRes.json();
+                const backendsEl = document.getElementById('stat-backends');
+                const queueEl = document.getElementById('stat-queue');
+                if (backendsEl) backendsEl.textContent = status.backends.healthy + ' / ' + status.backends.total;
+                if (queueEl) queueEl.textContent = status.queue.total || 0;
+            }
+            if (modelsRes.ok) {
+                const data = await modelsRes.json();
+                const countEl = document.getElementById('stat-models-count');
+                const gridEl = document.getElementById('models-grid');
+                if (countEl) countEl.textContent = data.models ? data.models.length : 0;
+                if (gridEl && data.models && data.models.length) {
+                    var html = '<div class="row">';
+                    data.models.forEach(function(m) {
+                        html += '<div class="col-md-4 mb-2"><span class="badge bg-secondary"><i class="bi bi-box"></i> ' + m.id + '</span></div>';
+                    });
+                    html += '</div>';
+                    gridEl.innerHTML = html;
+                } else if (gridEl) {
+                    gridEl.innerHTML = '<p class="text-muted mb-0">No models currently available.</p>';
+                }
+            }
+        } catch (e) { /* ignore transient failures */ }
+    }
+    setInterval(refreshDashboard, 30000);
 })();
 </script>
 {% endblock %}
