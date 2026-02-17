@@ -881,6 +881,7 @@ class BackendRegistry:
                     await db.flush()
 
                     # Update models
+                    discovered_names = []
                     for model_info in caps.models:
                         modality = Modality.CHAT
                         if model_info.supports_vision:
@@ -898,6 +899,19 @@ class BackendRegistry:
                             supports_structured_output=model_info.supports_structured_output,
                             is_loaded=model_info.is_loaded,
                         )
+                        discovered_names.append(model_info.name)
+
+                    # Remove models no longer present on this backend
+                    if discovered_names:
+                        removed = await crud.remove_stale_models(
+                            db, backend_id, discovered_names
+                        )
+                        if removed:
+                            logger.info(
+                                "stale_models_removed",
+                                backend_id=backend_id,
+                                count=removed,
+                            )
 
             logger.info(
                 "backend_discovered",

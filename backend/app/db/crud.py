@@ -875,6 +875,24 @@ async def upsert_model(
     return model
 
 
+async def remove_stale_models(
+    db: AsyncSession, backend_id: int, current_model_names: List[str]
+) -> int:
+    """Remove models for a backend that are no longer discovered."""
+    if not current_model_names:
+        return 0
+    result = await db.execute(
+        delete(Model).where(
+            and_(
+                Model.backend_id == backend_id,
+                Model.name.notin_(current_model_names),
+            )
+        )
+    )
+    await db.flush()
+    return result.rowcount
+
+
 async def get_all_available_models(db: AsyncSession) -> List[Tuple[str, List[Backend]]]:
     """Get all unique model names with their available backends."""
     result = await db.execute(
