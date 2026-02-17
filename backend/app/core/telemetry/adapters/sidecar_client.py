@@ -69,10 +69,11 @@ class SidecarClient:
             response = await client.get("/gpu-info")
 
             if response.status_code != 200:
-                logger.debug(
+                logger.warning(
                     "sidecar_bad_status",
                     url=self.base_url,
                     status=response.status_code,
+                    body=response.text[:200],
                 )
                 return None
 
@@ -80,10 +81,10 @@ class SidecarClient:
             return self._parse_response(data)
 
         except httpx.TimeoutException:
-            logger.debug("sidecar_timeout", url=self.base_url)
+            logger.warning("sidecar_timeout", url=self.base_url)
             return None
         except Exception as e:
-            logger.debug("sidecar_error", url=self.base_url, error=str(e))
+            logger.warning("sidecar_error", url=self.base_url, error=str(e))
             return None
 
     async def health_check(self) -> bool:

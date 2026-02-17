@@ -154,7 +154,13 @@
                                 <dt class="col-6">Sidecar:</dt>
                                 <dd class="col-6">
                                     {% if item.node.sidecar_url %}
-                                    <span class="badge bg-success">Connected</span>
+                                        {% if item.node.status.value == 'online' %}
+                                        <span class="badge bg-success">Connected</span>
+                                        {% elif item.node.status.value == 'offline' %}
+                                        <span class="badge bg-danger">Unreachable</span>
+                                        {% else %}
+                                        <span class="badge bg-warning text-dark">Not Polled</span>
+                                        {% endif %}
                                     <small class="text-muted d-block">{{ item.node.sidecar_url }}</small>
                                     {% else %}
                                     <span class="badge bg-secondary">None</span>

@@ -950,7 +950,17 @@ class BackendRegistry:
         # Cache for backend telemetry phase
         self._node_sidecar_data[node_id] = sidecar_data
 
-        if not sidecar_data or not sidecar_data.gpus:
+        if not sidecar_data:
+            logger.warning("sidecar_no_response", node_id=node_id)
+            try:
+                async with get_async_db_context() as db:
+                    await crud.update_node_status(db, node_id, NodeStatus.OFFLINE)
+            except Exception:
+                pass
+            return
+
+        if not sidecar_data.gpus:
+            logger.warning("sidecar_no_gpus", node_id=node_id, gpu_count=sidecar_data.gpu_count)
             return
 
         try:
