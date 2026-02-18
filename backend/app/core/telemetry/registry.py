@@ -341,6 +341,11 @@ class BackendRegistry:
                 modality=modality,
             )
 
+    async def model_exists(self, model_name: str) -> bool:
+        """Check if a model is available on any healthy backend."""
+        backends = await self.get_backends_with_model(model_name)
+        return len(backends) > 0
+
     async def get_gpu_utilizations(self) -> Dict[int, Optional[float]]:
         """Get current GPU utilization for all backends."""
         async with self._lock:

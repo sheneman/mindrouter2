@@ -439,13 +439,9 @@ class InferenceService:
         )
 
         if not backends:
-            # Try getting all healthy backends
-            backends = await self._registry.get_healthy_backends()
-
-        if not backends:
             raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="No healthy backends available",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Model '{job.model}' not found",
             )
 
         # Filter out circuit-broken backends

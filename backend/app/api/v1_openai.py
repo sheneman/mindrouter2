@@ -84,6 +84,20 @@ async def chat_completions(
             detail=f"Invalid request format: {str(e)}",
         )
 
+    # Early model validation — reject unknown models before queuing
+    registry = get_registry()
+    if not await registry.model_exists(canonical.model):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": {
+                    "message": f"The model '{canonical.model}' does not exist",
+                    "type": "invalid_request_error",
+                    "code": "model_not_found",
+                }
+            },
+        )
+
     # Create inference service
     service = InferenceService(db)
 
@@ -143,6 +157,20 @@ async def completions(
             detail=f"Invalid request format: {str(e)}",
         )
 
+    # Early model validation
+    registry = get_registry()
+    if not await registry.model_exists(canonical.model):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": {
+                    "message": f"The model '{canonical.model}' does not exist",
+                    "type": "invalid_request_error",
+                    "code": "model_not_found",
+                }
+            },
+        )
+
     service = InferenceService(db)
 
     if canonical.stream:
@@ -191,6 +219,20 @@ async def embeddings(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid request format: {str(e)}",
+        )
+
+    # Early model validation
+    registry = get_registry()
+    if not await registry.model_exists(canonical.model):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": {
+                    "message": f"The model '{canonical.model}' does not exist",
+                    "type": "invalid_request_error",
+                    "code": "model_not_found",
+                }
+            },
         )
 
     service = InferenceService(db)

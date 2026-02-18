@@ -74,6 +74,14 @@ async def ollama_chat(
             detail=f"Invalid request format: {str(e)}",
         )
 
+    # Early model validation — reject unknown models before queuing
+    registry = get_registry()
+    if not await registry.model_exists(canonical.model):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"model '{canonical.model}' not found",
+        )
+
     service = InferenceService(db)
 
     # Ollama defaults to streaming
@@ -127,6 +135,14 @@ async def ollama_generate(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid request format: {str(e)}",
+        )
+
+    # Early model validation
+    registry = get_registry()
+    if not await registry.model_exists(chat_canonical.model):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"model '{chat_canonical.model}' not found",
         )
 
     service = InferenceService(db)
@@ -219,6 +235,14 @@ async def ollama_embeddings(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid request format: {str(e)}",
+        )
+
+    # Early model validation
+    registry = get_registry()
+    if not await registry.model_exists(canonical.model):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"model '{canonical.model}' not found",
         )
 
     service = InferenceService(db)

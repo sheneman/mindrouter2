@@ -23,6 +23,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.auth import authenticate_request
+from backend.app.core.telemetry.registry import get_registry
 from backend.app.core.translators.anthropic_in import AnthropicInTranslator
 from backend.app.db.models import ApiKey, User
 from backend.app.db.session import get_async_db
@@ -81,6 +82,21 @@ async def messages(
         )
 
     model = body.get("model", canonical.model)
+
+    # Early model validation — reject unknown models before queuing
+    registry = get_registry()
+    if not await registry.model_exists(canonical.model):
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={
+                "type": "error",
+                "error": {
+                    "type": "not_found_error",
+                    "message": f"model: {canonical.model}",
+                },
+            },
+        )
 
     # Create inference service
     service = InferenceService(db)
