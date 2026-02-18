@@ -580,3 +580,91 @@ def all_params_openai_request():
         "user": "test-user",
         "response_format": {"type": "json_object"},
     }
+
+
+@pytest.fixture
+def all_params_ollama_request_extended():
+    """Ollama request with ALL options including extended params."""
+    return {
+        "model": "llama3.2",
+        "messages": [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Hello!"},
+        ],
+        "stream": True,
+        "format": "json",
+        "think": True,
+        "options": {
+            "temperature": 0.8,
+            "top_p": 0.95,
+            "num_predict": 256,
+            "stop": ["\n", "END"],
+            "presence_penalty": 0.5,
+            "frequency_penalty": 0.3,
+            "seed": 42,
+            "top_k": 40,
+            "repeat_penalty": 1.2,
+            "min_p": 0.05,
+            "mirostat": 2,
+            "mirostat_tau": 5.0,
+            "num_ctx": 4096,
+        },
+    }
+
+
+@pytest.fixture
+def all_params_openai_request_extended():
+    """OpenAI request with ALL params including extended params."""
+    return {
+        "model": "gpt-4",
+        "messages": [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Hello!"},
+        ],
+        "temperature": 0.8,
+        "top_p": 0.95,
+        "max_tokens": 256,
+        "stream": False,
+        "stop": ["\n", "END"],
+        "presence_penalty": 0.5,
+        "frequency_penalty": 0.3,
+        "seed": 42,
+        "top_k": 50,
+        "repetition_penalty": 1.3,
+        "min_p": 0.1,
+        "n": 1,
+        "user": "test-user",
+        "response_format": {"type": "json_object"},
+    }
+
+
+@pytest.fixture
+def sample_completion_request():
+    """Sample OpenAI /v1/completions request."""
+    return {
+        "model": "gpt-3.5-turbo-instruct",
+        "prompt": "Once upon a time",
+        "temperature": 0.7,
+        "max_tokens": 100,
+        "top_k": 40,
+        "repetition_penalty": 1.1,
+        "min_p": 0.05,
+    }
+
+
+@pytest.fixture
+def sample_generate_request():
+    """Sample Ollama /api/generate request."""
+    return {
+        "model": "llama3.2",
+        "prompt": "Once upon a time",
+        "system": "You are a storyteller.",
+        "stream": True,
+        "options": {
+            "temperature": 0.7,
+            "num_predict": 100,
+            "top_k": 40,
+            "repeat_penalty": 1.1,
+            "min_p": 0.05,
+        },
+    }

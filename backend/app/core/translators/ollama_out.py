@@ -72,6 +72,10 @@ class OllamaOutTranslator:
             if format_spec:
                 payload["format"] = format_spec
 
+        # Thinking mode goes at top level, NOT inside options
+        if canonical.think is not None:
+            payload["think"] = canonical.think
+
         return payload
 
     @staticmethod
@@ -341,6 +345,16 @@ class OllamaOutTranslator:
             options["frequency_penalty"] = canonical.frequency_penalty
         if canonical.seed is not None:
             options["seed"] = canonical.seed
+        if canonical.top_k is not None:
+            options["top_k"] = canonical.top_k
+        if canonical.repeat_penalty is not None:
+            options["repeat_penalty"] = canonical.repeat_penalty
+        if canonical.min_p is not None:
+            options["min_p"] = canonical.min_p
+
+        # Merge opaque backend options (mirostat, tfs_z, num_ctx, etc.)
+        if canonical.backend_options:
+            options.update(canonical.backend_options)
 
         return options
 
@@ -365,6 +379,16 @@ class OllamaOutTranslator:
             options["frequency_penalty"] = canonical.frequency_penalty
         if canonical.seed is not None:
             options["seed"] = canonical.seed
+        if canonical.top_k is not None:
+            options["top_k"] = canonical.top_k
+        if canonical.repeat_penalty is not None:
+            options["repeat_penalty"] = canonical.repeat_penalty
+        if canonical.min_p is not None:
+            options["min_p"] = canonical.min_p
+
+        # Merge opaque backend options
+        if canonical.backend_options:
+            options.update(canonical.backend_options)
 
         return options
 

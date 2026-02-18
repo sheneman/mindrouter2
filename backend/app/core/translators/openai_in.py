@@ -65,6 +65,9 @@ class OpenAIInTranslator:
             presence_penalty=data.get("presence_penalty"),
             frequency_penalty=data.get("frequency_penalty"),
             seed=data.get("seed"),
+            top_k=data.get("top_k"),
+            repeat_penalty=data.get("repetition_penalty"),  # OpenAI/vLLM name
+            min_p=data.get("min_p"),
             response_format=response_format,
             n=data.get("n", 1),
             user=data.get("user"),
@@ -91,6 +94,9 @@ class OpenAIInTranslator:
             presence_penalty=data.get("presence_penalty"),
             frequency_penalty=data.get("frequency_penalty"),
             seed=data.get("seed"),
+            top_k=data.get("top_k"),
+            repeat_penalty=data.get("repetition_penalty"),  # OpenAI/vLLM name
+            min_p=data.get("min_p"),
             suffix=data.get("suffix"),
             echo=data.get("echo", False),
             n=data.get("n", 1),

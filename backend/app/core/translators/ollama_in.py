@@ -65,6 +65,18 @@ class OllamaInTranslator:
         # Handle Ollama format field
         response_format = OllamaInTranslator._translate_format(data.get("format"))
 
+        # Known option keys that map to canonical fields
+        _KNOWN_OPTION_KEYS = {
+            "temperature", "top_p", "num_predict", "stop",
+            "presence_penalty", "frequency_penalty", "seed",
+            "top_k", "repeat_penalty", "min_p",
+        }
+
+        # Collect unknown option keys into backend_options
+        backend_options = {
+            k: v for k, v in options.items() if k not in _KNOWN_OPTION_KEYS
+        } or None
+
         return CanonicalChatRequest(
             model=data["model"],
             messages=messages,
@@ -76,6 +88,11 @@ class OllamaInTranslator:
             presence_penalty=options.get("presence_penalty"),
             frequency_penalty=options.get("frequency_penalty"),
             seed=options.get("seed"),
+            top_k=options.get("top_k"),
+            repeat_penalty=options.get("repeat_penalty"),
+            min_p=options.get("min_p"),
+            think=data.get("think"),
+            backend_options=backend_options,
             response_format=response_format,
         )
 
@@ -108,6 +125,18 @@ class OllamaInTranslator:
         if system:
             prompt = f"{system}\n\n{prompt}"
 
+        # Known option keys that map to canonical fields
+        _KNOWN_OPTION_KEYS = {
+            "temperature", "top_p", "num_predict", "stop",
+            "presence_penalty", "frequency_penalty", "seed",
+            "top_k", "repeat_penalty", "min_p",
+        }
+
+        # Collect unknown option keys into backend_options
+        backend_options = {
+            k: v for k, v in options.items() if k not in _KNOWN_OPTION_KEYS
+        } or None
+
         return CanonicalCompletionRequest(
             model=data["model"],
             prompt=prompt,
@@ -119,6 +148,10 @@ class OllamaInTranslator:
             presence_penalty=options.get("presence_penalty"),
             frequency_penalty=options.get("frequency_penalty"),
             seed=options.get("seed"),
+            top_k=options.get("top_k"),
+            repeat_penalty=options.get("repeat_penalty"),
+            min_p=options.get("min_p"),
+            backend_options=backend_options,
         )
 
     @staticmethod

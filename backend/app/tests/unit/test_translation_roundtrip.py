@@ -15,11 +15,13 @@ from backend.app.core.translators import (
 )
 from backend.app.core.canonical_schemas import (
     CanonicalChatRequest,
+    CanonicalEmbeddingRequest,
     CanonicalMessage,
     MessageRole,
     ResponseFormat,
     ResponseFormatType,
     ImageBase64Content,
+    ImageUrlContent,
     TextContent,
 )
 
@@ -388,3 +390,240 @@ class TestResponseRoundTrip:
         assert len(canonical.data) == 1
         assert canonical.data[0]["embedding"] == [0.1, 0.2, 0.3]
         assert canonical.usage.prompt_tokens == 5
+
+
+# ===========================================================================
+# Vision edge cases
+# ===========================================================================
+
+class TestVisionEdgeCases:
+    """Edge cases for vision/multimodal content translation."""
+
+    def test_multiple_images_openai_to_ollama(self):
+        """Multiple images in one message."""
+        b64_1 = base64.b64encode(b'\x89PNG' + b'\x00' * 20).decode()
+        b64_2 = base64.b64encode(b'\xff\xd8\xff' + b'\x00' * 20).decode()
+
+        openai_data = {
+            "model": "gpt-4-vision",
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Compare these images"},
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64_1}"}},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_2}"}},
+                ],
+            }],
+        }
+        canonical = OpenAIInTranslator.translate_chat_request(openai_data)
+        assert canonical.requires_vision() is True
+
+        ollama_payload = OllamaOutTranslator.translate_chat_request(canonical)
+        msg = ollama_payload["messages"][0]
+        assert len(msg["images"]) == 2
+
+    def test_image_detail_level_preserved(self):
+        """Image detail level preserved through OpenAI → Canonical → vLLM."""
+        openai_data = {
+            "model": "gpt-4-vision",
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Describe"},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "https://example.com/img.png",
+                            "detail": "high",
+                        },
+                    },
+                ],
+            }],
+        }
+        canonical = OpenAIInTranslator.translate_chat_request(openai_data)
+        vllm_payload = VLLMOutTranslator.translate_chat_request(canonical)
+
+        content = vllm_payload["messages"][0]["content"]
+        img_block = [b for b in content if b.get("type") == "image_url"][0]
+        assert img_block["image_url"]["detail"] == "high"
+
+    def test_url_only_images_dropped_by_ollama(self):
+        """URL-only images (no base64) are silently dropped in Ollama output."""
+        canonical = CanonicalChatRequest(
+            model="llava",
+            messages=[
+                CanonicalMessage(
+                    role=MessageRole.USER,
+                    content=[
+                        TextContent(text="Describe"),
+                        ImageUrlContent(image_url={
+                            "url": "https://example.com/img.png",
+                            "detail": "auto",
+                        }),
+                    ],
+                )
+            ],
+        )
+        ollama_payload = OllamaOutTranslator.translate_chat_request(canonical)
+        msg = ollama_payload["messages"][0]
+        assert "images" not in msg  # URL images can't be sent to Ollama
+        assert msg["content"] == "Describe"
+
+    def test_mixed_base64_and_url_images(self):
+        """Base64 images kept, URL images dropped for Ollama output."""
+        b64_data = base64.b64encode(b'\x89PNG' + b'\x00' * 20).decode()
+        canonical = CanonicalChatRequest(
+            model="llava",
+            messages=[
+                CanonicalMessage(
+                    role=MessageRole.USER,
+                    content=[
+                        TextContent(text="Describe"),
+                        ImageBase64Content(data=b64_data, media_type="image/png"),
+                        ImageUrlContent(image_url={
+                            "url": "https://example.com/img.png",
+                            "detail": "auto",
+                        }),
+                    ],
+                )
+            ],
+        )
+        ollama_payload = OllamaOutTranslator.translate_chat_request(canonical)
+        msg = ollama_payload["messages"][0]
+        assert len(msg["images"]) == 1  # Only base64 image
+        assert msg["images"][0] == b64_data
+
+
+# ===========================================================================
+# Embedding parameter gaps
+# ===========================================================================
+
+class TestEmbeddingParameterGaps:
+    """encoding_format, dimensions, and multi-input embedding edge cases."""
+
+    def test_encoding_format_preserved(self):
+        data = {
+            "model": "text-embedding",
+            "input": "Hello",
+            "encoding_format": "base64",
+        }
+        canonical = OpenAIInTranslator.translate_embedding_request(data)
+        assert canonical.encoding_format == "base64"
+
+        vllm_payload = VLLMOutTranslator.translate_embedding_request(canonical)
+        assert vllm_payload["encoding_format"] == "base64"
+
+    def test_encoding_format_default_float(self):
+        data = {"model": "text-embedding", "input": "Hello"}
+        canonical = OpenAIInTranslator.translate_embedding_request(data)
+        assert canonical.encoding_format == "float"
+
+        vllm_payload = VLLMOutTranslator.translate_embedding_request(canonical)
+        assert "encoding_format" not in vllm_payload  # float is default, omitted
+
+    def test_dimensions_preserved(self):
+        data = {
+            "model": "text-embedding",
+            "input": "Hello",
+            "dimensions": 512,
+        }
+        canonical = OpenAIInTranslator.translate_embedding_request(data)
+        assert canonical.dimensions == 512
+
+        vllm_payload = VLLMOutTranslator.translate_embedding_request(canonical)
+        assert vllm_payload["dimensions"] == 512
+
+    def test_multi_input_to_ollama_uses_first(self):
+        """Ollama only supports single input — documents taking first element."""
+        canonical = CanonicalEmbeddingRequest(
+            model="nomic-embed-text",
+            input=["first", "second", "third"],
+        )
+        ollama_payload = OllamaOutTranslator.translate_embedding_request(canonical)
+        assert ollama_payload["prompt"] == "first"
+
+    def test_multi_input_to_vllm_preserved(self):
+        """vLLM supports list inputs natively."""
+        canonical = CanonicalEmbeddingRequest(
+            model="text-embedding",
+            input=["first", "second"],
+        )
+        vllm_payload = VLLMOutTranslator.translate_embedding_request(canonical)
+        assert vllm_payload["input"] == ["first", "second"]
+
+    def test_ollama_embedding_input_or_prompt(self):
+        """Ollama embedding accepts both 'input' and 'prompt' keys."""
+        data1 = {"model": "m", "input": "hello"}
+        data2 = {"model": "m", "prompt": "hello"}
+        c1 = OllamaInTranslator.translate_embedding_request(data1)
+        c2 = OllamaInTranslator.translate_embedding_request(data2)
+        assert c1.input == "hello"
+        assert c2.input == "hello"
+
+
+# ===========================================================================
+# Edge cases and negative tests
+# ===========================================================================
+
+class TestEdgeCasesAndNegative:
+    """stop as string vs array, unknown fields, tool messages, empty messages."""
+
+    def test_stop_as_string(self):
+        """stop can be a string (not just an array)."""
+        openai_data = {
+            "model": "gpt-4",
+            "messages": [{"role": "user", "content": "Hi"}],
+            "stop": "END",
+        }
+        canonical = OpenAIInTranslator.translate_chat_request(openai_data)
+        assert canonical.stop == "END"
+
+        # Round-trip through both outputs
+        vllm_payload = VLLMOutTranslator.translate_chat_request(canonical)
+        assert vllm_payload["stop"] == "END"
+
+        ollama_payload = OllamaOutTranslator.translate_chat_request(canonical)
+        assert ollama_payload["options"]["stop"] == "END"
+
+    def test_stop_as_array(self):
+        openai_data = {
+            "model": "gpt-4",
+            "messages": [{"role": "user", "content": "Hi"}],
+            "stop": ["\n", "END"],
+        }
+        canonical = OpenAIInTranslator.translate_chat_request(openai_data)
+        assert canonical.stop == ["\n", "END"]
+
+    def test_unknown_fields_ignored(self):
+        """Unknown top-level fields in OpenAI request don't cause errors."""
+        openai_data = {
+            "model": "gpt-4",
+            "messages": [{"role": "user", "content": "Hi"}],
+            "unknown_field": "should be ignored",
+            "another_unknown": 42,
+        }
+        canonical = OpenAIInTranslator.translate_chat_request(openai_data)
+        assert canonical.model == "gpt-4"
+
+    def test_tool_message_role(self):
+        """Tool role messages translated correctly."""
+        openai_data = {
+            "model": "gpt-4",
+            "messages": [
+                {"role": "user", "content": "Use the calculator"},
+                {"role": "tool", "content": "42", "name": "calculator"},
+            ],
+        }
+        canonical = OpenAIInTranslator.translate_chat_request(openai_data)
+        assert canonical.messages[1].role == MessageRole.TOOL
+        assert canonical.messages[1].content == "42"
+        assert canonical.messages[1].name == "calculator"
+
+    def test_empty_content_message(self):
+        """Empty content string handled gracefully."""
+        openai_data = {
+            "model": "gpt-4",
+            "messages": [{"role": "user", "content": ""}],
+        }
+        canonical = OpenAIInTranslator.translate_chat_request(openai_data)
+        assert canonical.messages[0].content == ""

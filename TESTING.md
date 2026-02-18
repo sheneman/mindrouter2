@@ -30,7 +30,9 @@
 | File | Tests | What it covers |
 |------|-------|----------------|
 | `backend/app/tests/unit/test_translators.py` | 12 | OpenAIIn, OllamaIn, OllamaOut, VLLMOut translator static methods |
-| `backend/app/tests/unit/test_translation_roundtrip.py` | 18 | Round-trip: OpenAI ↔ Canonical ↔ Ollama parameter mapping |
+| `backend/app/tests/unit/test_translation_roundtrip.py` | 33 | Round-trip: OpenAI ↔ Canonical ↔ Ollama parameter mapping, vision edge cases, embedding gaps, edge cases |
+| `backend/app/tests/unit/test_hyperparameter_fidelity.py` | 33 | Extended sampling params (top_k, repeat_penalty, min_p), backend_options passthrough, thinking mode |
+| `backend/app/tests/unit/test_completions.py` | 22 | /v1/completions and /api/generate translation, to_chat_request conversion, completion output |
 | `backend/app/tests/unit/test_structured_outputs.py` | 22 | JSON schema validation, structured output for Ollama & OpenAI |
 | `backend/app/tests/unit/test_streaming.py` | 20 | ndjson (Ollama) and SSE (vLLM/OpenAI) stream parsing |
 | `backend/app/tests/unit/test_validators.py` | 28 | Input validation: request params, message schemas, constraints |

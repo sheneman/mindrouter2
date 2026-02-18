@@ -78,6 +78,13 @@ class VLLMOutTranslator:
             payload["frequency_penalty"] = canonical.frequency_penalty
         if canonical.seed is not None:
             payload["seed"] = canonical.seed
+        if canonical.top_k is not None:
+            payload["top_k"] = canonical.top_k
+        if canonical.repeat_penalty is not None:
+            payload["repetition_penalty"] = canonical.repeat_penalty  # vLLM name
+        if canonical.min_p is not None:
+            payload["min_p"] = canonical.min_p
+        # Note: backend_options and think are Ollama-only, intentionally ignored
         if canonical.n != 1:
             payload["n"] = canonical.n
         if canonical.user:
@@ -123,6 +130,13 @@ class VLLMOutTranslator:
             payload["frequency_penalty"] = canonical.frequency_penalty
         if canonical.seed is not None:
             payload["seed"] = canonical.seed
+        if canonical.top_k is not None:
+            payload["top_k"] = canonical.top_k
+        if canonical.repeat_penalty is not None:
+            payload["repetition_penalty"] = canonical.repeat_penalty  # vLLM name
+        if canonical.min_p is not None:
+            payload["min_p"] = canonical.min_p
+        # Note: backend_options is Ollama-only, intentionally ignored
         if canonical.suffix is not None:
             payload["suffix"] = canonical.suffix
         if canonical.echo:

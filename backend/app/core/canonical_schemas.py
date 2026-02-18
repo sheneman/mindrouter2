@@ -129,6 +129,17 @@ class CanonicalChatRequest(BaseModel):
     frequency_penalty: Optional[float] = Field(default=None, ge=-2, le=2)
     seed: Optional[int] = None
 
+    # Extended sampling parameters
+    top_k: Optional[int] = Field(default=None, ge=1)
+    repeat_penalty: Optional[float] = None  # vLLM calls this "repetition_penalty"
+    min_p: Optional[float] = Field(default=None, ge=0, le=1)
+
+    # Reasoning mode
+    think: Optional[bool] = None
+
+    # Opaque backend-specific options (e.g. Ollama mirostat, tfs_z, num_ctx)
+    backend_options: Optional[Dict[str, Any]] = None
+
     # Structured output
     response_format: Optional[ResponseFormat] = None
 
@@ -179,6 +190,14 @@ class CanonicalCompletionRequest(BaseModel):
     n: int = 1
     best_of: int = 1
 
+    # Extended sampling parameters
+    top_k: Optional[int] = Field(default=None, ge=1)
+    repeat_penalty: Optional[float] = None  # vLLM calls this "repetition_penalty"
+    min_p: Optional[float] = Field(default=None, ge=0, le=1)
+
+    # Opaque backend-specific options (e.g. Ollama mirostat, tfs_z, num_ctx)
+    backend_options: Optional[Dict[str, Any]] = None
+
     # MindRouter metadata
     request_id: Optional[str] = None
     user_id: Optional[int] = None
@@ -198,6 +217,10 @@ class CanonicalCompletionRequest(BaseModel):
             presence_penalty=self.presence_penalty,
             frequency_penalty=self.frequency_penalty,
             seed=self.seed,
+            top_k=self.top_k,
+            repeat_penalty=self.repeat_penalty,
+            min_p=self.min_p,
+            backend_options=self.backend_options,
             n=self.n,
             request_id=self.request_id,
             user_id=self.user_id,
