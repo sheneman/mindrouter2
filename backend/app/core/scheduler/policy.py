@@ -183,6 +183,7 @@ class SchedulerPolicy:
         self,
         job: Job,
         user_role: str,
+        user_weight: float = 1.0,
     ) -> int:
         """
         Submit a job for scheduling.
@@ -190,11 +191,12 @@ class SchedulerPolicy:
         Args:
             job: The job to submit
             user_role: User's role for priority weighting
+            user_weight: Direct weight from group.scheduler_weight
 
         Returns:
             Queue position
         """
-        return await self.router.submit_job(job, user_role)
+        return await self.router.submit_job(job, user_role, user_weight=user_weight)
 
     async def route_job(
         self,
