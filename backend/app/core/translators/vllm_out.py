@@ -25,10 +25,13 @@ from backend.app.core.canonical_schemas import (
     CanonicalCompletionRequest,
     CanonicalEmbeddingRequest,
     CanonicalEmbeddingResponse,
+    CanonicalFunctionCall,
     CanonicalMessage,
     CanonicalStreamChunk,
     CanonicalStreamChoice,
     CanonicalStreamDelta,
+    CanonicalStreamToolCallDelta,
+    CanonicalToolCall,
     ImageBase64Content,
     ImageUrlContent,
     MessageRole,
@@ -89,6 +92,12 @@ class VLLMOutTranslator:
             payload["n"] = canonical.n
         if canonical.user:
             payload["user"] = canonical.user
+
+        # Handle tool calling
+        if canonical.tools:
+            payload["tools"] = [t.model_dump() for t in canonical.tools]
+        if canonical.tool_choice is not None:
+            payload["tool_choice"] = canonical.tool_choice
 
         # Handle structured output
         if canonical.response_format:
@@ -187,9 +196,26 @@ class VLLMOutTranslator:
         choices = []
         for choice_data in openai_response.get("choices", []):
             message_data = choice_data.get("message", {})
+
+            # Parse tool_calls if present
+            tool_calls = None
+            if "tool_calls" in message_data and message_data["tool_calls"]:
+                tool_calls = [
+                    CanonicalToolCall(
+                        id=tc["id"],
+                        type=tc.get("type", "function"),
+                        function=CanonicalFunctionCall(
+                            name=tc["function"]["name"],
+                            arguments=tc["function"]["arguments"],
+                        ),
+                    )
+                    for tc in message_data["tool_calls"]
+                ]
+
             message = CanonicalMessage(
                 role=MessageRole(message_data.get("role", "assistant")),
-                content=message_data.get("content") or "",
+                content=message_data.get("content"),
+                tool_calls=tool_calls,
             )
             choices.append(
                 CanonicalChoice(
@@ -265,6 +291,20 @@ class VLLMOutTranslator:
                             choices = []
                             for choice_data in data.get("choices", []):
                                 delta_data = choice_data.get("delta", {})
+
+                                # Parse tool_calls deltas
+                                tc_deltas = None
+                                if "tool_calls" in delta_data and delta_data["tool_calls"]:
+                                    tc_deltas = [
+                                        CanonicalStreamToolCallDelta(
+                                            index=tcd.get("index", 0),
+                                            id=tcd.get("id"),
+                                            type=tcd.get("type"),
+                                            function=tcd.get("function"),
+                                        )
+                                        for tcd in delta_data["tool_calls"]
+                                    ]
+
                                 delta = CanonicalStreamDelta(
                                     role=(
                                         MessageRole(delta_data["role"])
@@ -272,6 +312,7 @@ class VLLMOutTranslator:
                                         else None
                                     ),
                                     content=delta_data.get("content"),
+                                    tool_calls=tc_deltas,
                                 )
                                 choices.append(
                                     CanonicalStreamChoice(
@@ -364,10 +405,19 @@ class VLLMOutTranslator:
 
             result["content"] = content_blocks
         else:
+            # content can be None for tool-call-only assistant messages
             result["content"] = msg.content
 
         if msg.name:
             result["name"] = msg.name
+
+        # Add tool_calls for assistant messages
+        if msg.tool_calls:
+            result["tool_calls"] = [tc.model_dump() for tc in msg.tool_calls]
+
+        # Add tool_call_id for tool messages
+        if msg.tool_call_id:
+            result["tool_call_id"] = msg.tool_call_id
 
         return result
 

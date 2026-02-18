@@ -165,21 +165,24 @@ class InferenceService:
             full_content = ""
             chunk_count = 0
             routed_backend = None
+            last_finish_reason = None
 
             async for chunk, backend in self._proxy_stream_with_retry(
                 request, job, user, proxy_fn="_proxy_stream_request"
             ):
                 routed_backend = backend
 
-                # Format as SSE
-                yield f"data: {chunk.model_dump_json()}\n\n".encode()
+                # Format as SSE (exclude_none to avoid tool_calls:null in chunks)
+                yield f"data: {chunk.model_dump_json(exclude_none=True)}\n\n".encode()
 
                 chunk_count += 1
 
-                # Accumulate content
+                # Accumulate content and track finish reason
                 for choice in chunk.choices:
                     if choice.delta.content:
                         full_content += choice.delta.content
+                    if choice.finish_reason:
+                        last_finish_reason = choice.finish_reason
 
             # Send done signal
             yield b"data: [DONE]\n\n"
@@ -187,7 +190,8 @@ class InferenceService:
             # Update records
             if routed_backend:
                 await self._complete_streaming_request(
-                    db_request, routed_backend.id, full_content, chunk_count, job
+                    db_request, routed_backend.id, full_content, chunk_count, job,
+                    finish_reason=last_finish_reason,
                 )
 
         except Exception as e:
@@ -898,6 +902,25 @@ class InferenceService:
             }
             finish_reason = choices[0].get("finish_reason", "stop")
 
+            # Pass through tool_calls, converting arguments string → dict
+            if "tool_calls" in msg and msg["tool_calls"]:
+                ollama_tool_calls = []
+                for tc in msg["tool_calls"]:
+                    func = tc.get("function", {})
+                    args = func.get("arguments", "")
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except (json.JSONDecodeError, TypeError):
+                            args = {}
+                    ollama_tool_calls.append({
+                        "function": {
+                            "name": func.get("name", ""),
+                            "arguments": args,
+                        },
+                    })
+                message["tool_calls"] = ollama_tool_calls
+
         usage = openai_response.get("usage", {})
         return {
             "model": openai_response.get("model", ""),
@@ -966,12 +989,33 @@ class InferenceService:
         delta = choices[0].get("delta", {})
         finish = choices[0].get("finish_reason")
 
+        message: Dict[str, Any] = {
+            "role": delta.get("role", "assistant"),
+            "content": delta.get("content", ""),
+        }
+
+        # Pass through tool_calls, converting arguments string → dict
+        if "tool_calls" in delta and delta["tool_calls"]:
+            ollama_tool_calls = []
+            for tc in delta["tool_calls"]:
+                func = tc.get("function", {})
+                args = func.get("arguments", "")
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except (json.JSONDecodeError, TypeError):
+                        args = {}
+                ollama_tool_calls.append({
+                    "function": {
+                        "name": func.get("name", ""),
+                        "arguments": args,
+                    },
+                })
+            message["tool_calls"] = ollama_tool_calls
+
         return {
             "model": openai_chunk.get("model", ""),
-            "message": {
-                "role": delta.get("role", "assistant"),
-                "content": delta.get("content", ""),
-            },
+            "message": message,
             "done": finish is not None,
         }
 
@@ -1063,6 +1107,7 @@ class InferenceService:
         content: str,
         chunk_count: int,
         job: Job,
+        finish_reason: Optional[str] = None,
     ) -> None:
         """Complete a streaming request."""
         prompt_tokens = job.estimated_prompt_tokens
@@ -1075,11 +1120,13 @@ class InferenceService:
         await asyncio.shield(self._do_complete_streaming_db(
             db_request, backend_id, content, chunk_count,
             prompt_tokens, completion_tokens, total_tokens,
+            finish_reason=finish_reason or "stop",
         ))
 
     async def _do_complete_streaming_db(
         self, db_request, backend_id, content, chunk_count,
         prompt_tokens, completion_tokens, total_tokens,
+        finish_reason: str = "stop",
     ) -> None:
         """DB writes for streaming completion (run inside asyncio.shield)."""
         try:
@@ -1094,7 +1141,7 @@ class InferenceService:
                 self.db, db_request.id,
                 content=content,
                 chunk_count=chunk_count,
-                finish_reason="stop",
+                finish_reason=finish_reason,
             )
 
             await crud.create_usage_entry(

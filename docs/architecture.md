@@ -13,7 +13,7 @@ The API Gateway is the entry point for all client requests.
 **Key Responsibilities:**
 - Request authentication via API keys
 - Request validation and normalization
-- Protocol translation (OpenAI ↔ Ollama ↔ vLLM)
+- Protocol translation (OpenAI ↔ Ollama ↔ Anthropic ↔ vLLM)
 - Response streaming with low latency
 - Error handling and retry logic
 
@@ -24,6 +24,7 @@ The API Gateway is the entry point for all client requests.
 - `/api/chat` - Ollama-compatible chat
 - `/api/generate` - Ollama-compatible generation
 - `/api/tags` - Ollama-compatible model list
+- `/anthropic/v1/messages` - Anthropic Messages API compatible (inbound-only)
 
 ### 2. Translation Layer
 
@@ -34,34 +35,38 @@ The translation layer converts between different API formats.
 │ Client Request  │
 └────────┬────────┘
          │
-    ┌────▼────┐
-    │OpenAI In│  or  │Ollama In│
-    └────┬────┘      └────┬────┘
-         │                │
-         └───────┬────────┘
-                 │
-         ┌───────▼───────┐
-         │   Canonical   │
-         │    Schema     │
-         └───────┬───────┘
-                 │
-         ┌───────┴────────┐
-         │                │
-    ┌────▼────┐      ┌────▼────┐
-    │vLLM Out │      │Ollama Out│
-    └────┬────┘      └────┬────┘
-         │                │
-         └───────┬────────┘
-                 │
-    ┌────────────▼────────────┐
-    │     Backend Request     │
-    └─────────────────────────┘
+    ┌────▼────┐  ┌─────────┐  ┌────────────┐
+    │OpenAI In│  │Ollama In│  │Anthropic In│
+    └────┬────┘  └────┬────┘  └──────┬─────┘
+         │            │              │
+         └────────────┼──────────────┘
+                      │
+              ┌───────▼───────┐
+              │   Canonical   │
+              │    Schema     │
+              └───────┬───────┘
+                      │
+              ┌───────┴────────┐
+              │                │
+         ┌────▼────┐      ┌────▼─────┐
+         │vLLM Out │      │Ollama Out│
+         └────┬────┘      └────┬─────┘
+              │                │
+              └───────┬────────┘
+                      │
+         ┌────────────▼────────────┐
+         │     Backend Request     │
+         └─────────────────────────┘
 ```
 
+> **Note:** The Anthropic translator is inbound-only. Responses from backends (in OpenAI/Ollama format) are converted back to Anthropic Messages format by `AnthropicInTranslator.format_response()` and `format_stream_event()`.
+
 **Canonical Schemas:**
-- `CanonicalChatRequest` - Unified chat format
+- `CanonicalChatRequest` - Unified chat format (messages, tools, tool_choice, response_format, etc.)
+- `CanonicalMessage` - Message with role, content, tool_calls, tool_call_id
+- `CanonicalToolCall` / `CanonicalToolDefinition` - Tool calling primitives (arguments stored as JSON strings)
 - `CanonicalEmbeddingRequest` - Unified embedding format
-- `CanonicalStreamChunk` - Unified streaming format
+- `CanonicalStreamChunk` - Unified streaming format (including tool call deltas)
 
 ### 3. Fair-Share Scheduler
 

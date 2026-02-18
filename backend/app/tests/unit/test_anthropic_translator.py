@@ -274,8 +274,8 @@ class TestAnthropicInTranslator:
         assert result.messages[1].content == "4"
         assert result.messages[2].role == MessageRole.USER
 
-    def test_tool_use_block_lossy_conversion(self):
-        """Test that tool_use blocks get lossy text conversion."""
+    def test_tool_use_block_proper_extraction(self):
+        """Test that tool_use blocks are properly extracted as tool_calls."""
         data = {
             "model": "claude-3-sonnet",
             "max_tokens": 1024,
@@ -296,11 +296,15 @@ class TestAnthropicInTranslator:
         result = AnthropicInTranslator.translate_messages_request(data)
 
         msg = result.messages[0]
+        # Text content preserved
         assert isinstance(msg.content, list)
-        assert len(msg.content) == 2
+        assert len(msg.content) == 1
         assert isinstance(msg.content[0], TextContent)
-        assert isinstance(msg.content[1], TextContent)
-        assert "[tool_use]" in msg.content[1].text
+        assert msg.content[0].text == "Let me check."
+        # Tool call extracted
+        assert len(msg.tool_calls) == 1
+        assert msg.tool_calls[0].id == "toolu_123"
+        assert msg.tool_calls[0].function.name == "get_weather"
 
 
 class TestAnthropicResponseFormatting:

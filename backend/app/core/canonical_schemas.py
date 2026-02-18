@@ -77,14 +77,45 @@ class ImageBase64Content(BaseModel):
 ContentBlock = Union[TextContent, ImageUrlContent, ImageBase64Content]
 
 
+class CanonicalFunctionCall(BaseModel):
+    """Function call within a tool call."""
+    name: str
+    arguments: str  # JSON string
+
+
+class CanonicalToolCall(BaseModel):
+    """A tool call from the assistant."""
+    id: str
+    type: str = "function"
+    function: CanonicalFunctionCall
+
+
+class CanonicalToolDefinition(BaseModel):
+    """A tool definition provided in the request."""
+    type: str = "function"
+    function: Dict[str, Any]  # name, description, parameters
+
+
+class CanonicalStreamToolCallDelta(BaseModel):
+    """Delta for a tool call in a streaming response."""
+    index: int
+    id: Optional[str] = None
+    type: Optional[str] = None
+    function: Optional[Dict[str, Any]] = None  # name, arguments (partial)
+
+
 class CanonicalMessage(BaseModel):
     """Canonical message representation."""
     role: MessageRole
-    content: Union[str, List[ContentBlock]]
+    content: Optional[Union[str, List[ContentBlock]]] = None
     name: Optional[str] = None  # For tool messages
+    tool_calls: Optional[List[CanonicalToolCall]] = None
+    tool_call_id: Optional[str] = None  # For tool response messages
 
     def get_text_content(self) -> str:
         """Extract text content from message."""
+        if self.content is None:
+            return ""
         if isinstance(self.content, str):
             return self.content
         text_parts = []
@@ -97,7 +128,7 @@ class CanonicalMessage(BaseModel):
 
     def has_images(self) -> bool:
         """Check if message contains images."""
-        if isinstance(self.content, str):
+        if self.content is None or isinstance(self.content, str):
             return False
         for block in self.content:
             if isinstance(block, (ImageUrlContent, ImageBase64Content)):
@@ -139,6 +170,10 @@ class CanonicalChatRequest(BaseModel):
 
     # Opaque backend-specific options (e.g. Ollama mirostat, tfs_z, num_ctx)
     backend_options: Optional[Dict[str, Any]] = None
+
+    # Tool calling
+    tools: Optional[List[CanonicalToolDefinition]] = None
+    tool_choice: Optional[Any] = None
 
     # Structured output
     response_format: Optional[ResponseFormat] = None
@@ -265,6 +300,7 @@ class CanonicalStreamDelta(BaseModel):
     """Delta content for streaming responses."""
     role: Optional[MessageRole] = None
     content: Optional[str] = None
+    tool_calls: Optional[List[CanonicalStreamToolCallDelta]] = None
 
 
 class CanonicalStreamChoice(BaseModel):

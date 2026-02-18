@@ -89,10 +89,10 @@
                 <h2>Overview</h2>
                 <p>MindRouter2 sits between API consumers and GPU inference servers, providing:</p>
                 <ul>
-                    <li><strong>Unified API Gateway</strong> &mdash; OpenAI-compatible <code>/v1/*</code> endpoints and Ollama-compatible <code>/api/*</code> endpoints, both backed by the same pool of inference servers.</li>
-                    <li><strong>Cross-Engine Routing</strong> &mdash; A request arriving as OpenAI format can be served by an Ollama backend (and vice versa). The translation layer handles all protocol conversion transparently.</li>
+                    <li><strong>Unified API Gateway</strong> &mdash; OpenAI-compatible <code>/v1/*</code>, Ollama-compatible <code>/api/*</code>, and Anthropic-compatible <code>/anthropic/v1/*</code> endpoints, all backed by the same pool of inference servers.</li>
+                    <li><strong>Cross-Engine Routing</strong> &mdash; A request arriving in OpenAI, Ollama, or Anthropic format can be served by any backend. The translation layer handles all protocol conversion transparently.</li>
                     <li><strong>Fair-Share Scheduling</strong> &mdash; Weighted Deficit Round Robin (WDRR) ensures equitable GPU access across users in different groups with configurable priorities.</li>
-                    <li><strong>Multi-Modal Support</strong> &mdash; Text chat, text completion, embeddings, multimodal models, and structured JSON outputs.</li>
+                    <li><strong>Multi-Modal Support</strong> &mdash; Text chat, text completion, embeddings, multimodal models, structured JSON outputs, and tool calling (function calling).</li>
                     <li><strong>Per-User Quotas</strong> &mdash; Token budgets, requests-per-minute limits, and concurrent request caps, with defaults inherited from the user's group.</li>
                     <li><strong>Full Audit Logging</strong> &mdash; Every prompt, response, and token count is recorded for compliance and review.</li>
                     <li><strong>Real-Time GPU Telemetry</strong> &mdash; Per-GPU utilization, memory, temperature, and power metrics via lightweight sidecar agents.</li>
@@ -113,15 +113,15 @@
             <section id="architecture">
                 <h2>Architecture</h2>
                 <p>MindRouter2 follows a layered architecture:</p>
-                <pre><code class="arch-diagram">Client Request (OpenAI or Ollama format)
+                <pre><code class="arch-diagram">Client Request (OpenAI, Ollama, or Anthropic format)
         |
         v
 +-----------------------------+
-|     API Gateway Layer       |  &larr; /v1/*, /api/*, /api/admin/*
+|     API Gateway Layer       |  &larr; /v1/*, /api/*, /anthropic/*, /api/admin/*
 +-----------------------------+
 |  Authentication &amp; Quotas    |  &larr; API key verification, rate limiting
 +-----------------------------+
-|    Translation Layer        |  &larr; OpenAI &harr; Canonical &harr; Ollama/vLLM
+|    Translation Layer        |  &larr; OpenAI/Ollama/Anthropic &harr; Canonical &harr; Ollama/vLLM
 +-----------------------------+
 |   Fair-Share Scheduler      |  &larr; WDRR with per-user deficit counters
 +-----------------------------+
@@ -346,6 +346,26 @@ docker compose exec app python scripts/seed_dev_data.py</code></pre>
   ]
 }</code></pre>
 
+                <p><strong>Tool Calling (Function Calling):</strong></p>
+                <pre><code>{
+  "model": "llama3.2",
+  "messages": [{"role": "user", "content": "What's the weather in Seattle?"}],
+  "tools": [{
+    "type": "function",
+    "function": {
+      "name": "get_weather",
+      "description": "Get the current weather",
+      "parameters": {
+        "type": "object",
+        "properties": {"city": {"type": "string"}},
+        "required": ["city"]
+      }
+    }
+  }],
+  "tool_choice": "auto"
+}</code></pre>
+                <p>When the model decides to call a tool, the response includes <code>tool_calls</code> with <code>finish_reason: "tool_calls"</code>. Submit the tool result back as a <code>role: "tool"</code> message with the matching <code>tool_call_id</code>.</p>
+
                 <h4>Embeddings</h4>
                 <pre><code>curl -X POST http://localhost:8000/v1/embeddings \
   -H "Authorization: Bearer mr2_your-api-key" \
@@ -401,6 +421,82 @@ docker compose exec app python scripts/seed_dev_data.py</code></pre>
   -H "Authorization: Bearer mr2_your-api-key" \
   -H "Content-Type: application/json" \
   -d '{"model": "llama3.2", "prompt": "Why is the sky blue?"}'</code></pre>
+
+                <h3>Anthropic-Compatible Endpoint</h3>
+                <p>This endpoint accepts and returns data in the Anthropic Messages API format. Anthropic SDK clients (Python, TypeScript) can be pointed at MindRouter2 by setting <code>base_url</code>.</p>
+                <table class="table table-bordered table-sm">
+                    <thead class="table-light">
+                        <tr><th>Method</th><th>Path</th><th>Auth</th><th>Description</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>POST</td><td><code>/anthropic/v1/messages</code></td><td>API Key</td><td>Anthropic Messages API (streaming and non-streaming)</td></tr>
+                    </tbody>
+                </table>
+
+                <h4>Messages</h4>
+                <pre><code>curl -X POST http://localhost:8000/anthropic/v1/messages \
+  -H "Authorization: Bearer mr2_your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "llama3.2",
+    "max_tokens": 500,
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'</code></pre>
+
+                <p><strong>Response:</strong></p>
+                <pre><code>{
+  "id": "msg_abc123...",
+  "type": "message",
+  "role": "assistant",
+  "model": "llama3.2",
+  "content": [
+    {"type": "text", "text": "Hello! How can I help you today?"}
+  ],
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 10,
+    "output_tokens": 12
+  }
+}</code></pre>
+
+                <p><strong>Streaming</strong> &mdash; Set <code>"stream": true</code> to receive Anthropic SSE events (<code>message_start</code>, <code>content_block_delta</code>, <code>message_stop</code>, etc.):</p>
+                <pre><code>curl -X POST http://localhost:8000/anthropic/v1/messages \
+  -H "Authorization: Bearer mr2_your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "llama3.2", "max_tokens": 500, "messages": [{"role": "user", "content": "Hi"}], "stream": true}'</code></pre>
+
+                <p><strong>System Prompt:</strong></p>
+                <pre><code>{
+  "model": "llama3.2",
+  "max_tokens": 500,
+  "system": "You are a helpful assistant.",
+  "messages": [{"role": "user", "content": "Hello!"}]
+}</code></pre>
+
+                <h4>SDK Usage (Python)</h4>
+                <pre><code>import anthropic
+client = anthropic.Anthropic(
+    base_url="http://localhost:8000/anthropic",
+    api_key="mr2_your-api-key",
+)
+message = client.messages.create(
+    model="llama3.2",
+    max_tokens=500,
+    messages=[{"role": "user", "content": "Hello!"}],
+)</code></pre>
+
+                <p><strong>Supported features:</strong></p>
+                <ul>
+                    <li>System prompts (string or content block array)</li>
+                    <li>Multimodal inputs (base64 and URL images)</li>
+                    <li>Tool calling &mdash; <code>tools</code> with <code>input_schema</code>, <code>tool_choice</code> (<code>auto</code>/<code>any</code>/<code>tool</code>), <code>tool_use</code>/<code>tool_result</code> content blocks, streaming tool use with <code>input_json_delta</code></li>
+                    <li>Thinking/reasoning mode (<code>thinking.type</code>: <code>enabled</code>, <code>adaptive</code>, <code>disabled</code>)</li>
+                    <li>Structured output via <code>output_config.format</code> with <code>type: "json_schema"</code></li>
+                    <li>Parameters: <code>max_tokens</code>, <code>temperature</code>, <code>top_p</code>, <code>top_k</code>, <code>stop_sequences</code>, <code>stream</code></li>
+                    <li><code>metadata.user_id</code> mapping</li>
+                </ul>
+                <p><strong>Note:</strong> This is inbound-only &mdash; there are no Anthropic backends. Requests are translated to canonical format and routed to Ollama/vLLM backends like any other request.</p>
 
                 <h3>Health &amp; Metrics Endpoints</h3>
                 <p>These endpoints are unauthenticated and intended for monitoring infrastructure.</p>
@@ -784,44 +880,55 @@ docker compose exec app python scripts/seed_dev_data.py</code></pre>
             <!-- Section 9: Translation Layer -->
             <section id="translation-layer">
                 <h2>Translation Layer</h2>
-                <p>MindRouter2's translation layer enables cross-engine routing: a request arriving in OpenAI format can be served by an Ollama backend, and vice versa. All translation passes through a <strong>canonical internal schema</strong>.</p>
+                <p>MindRouter2's translation layer enables cross-engine routing: a request arriving in OpenAI, Ollama, or Anthropic format can be served by any Ollama or vLLM backend. All translation passes through a <strong>canonical internal schema</strong>.</p>
 
                 <h3>Request Flow</h3>
-                <pre><code>OpenAI Request --&gt; OpenAIInTranslator --&gt; CanonicalChatRequest
-                                                |
-Ollama Request --&gt; OllamaInTranslator --&gt; CanonicalChatRequest
-                                                |
-                                                v
-                                         [Scheduler selects backend]
-                                                |
-                        +-----------------------+-------------------+
-                        v                                           v
-              OllamaOutTranslator                         VLLMOutTranslator
-              (Ollama backend)                            (vLLM backend, OpenAI format)</code></pre>
+                <pre><code>OpenAI Request    --&gt; OpenAIInTranslator    --&gt; CanonicalChatRequest
+                                                       |
+Ollama Request    --&gt; OllamaInTranslator    --&gt; CanonicalChatRequest
+                                                       |
+Anthropic Request --&gt; AnthropicInTranslator --&gt; CanonicalChatRequest
+                                                       |
+                                                       v
+                                                [Scheduler selects backend]
+                                                       |
+                           +---------------------------+-------------------+
+                           v                                               v
+                 OllamaOutTranslator                             VLLMOutTranslator
+                 (Ollama backend)                                (vLLM backend, OpenAI format)</code></pre>
 
                 <h3>Canonical Schemas</h3>
                 <p>The canonical internal representation (<code>backend/app/core/canonical_schemas.py</code>) includes:</p>
                 <ul>
-                    <li><strong>CanonicalChatRequest</strong> &mdash; model, messages, temperature, top_p, max_tokens, stream, response_format, etc.</li>
-                    <li><strong>CanonicalMessage</strong> &mdash; role (system/user/assistant/tool), content (text or multimodal content blocks)</li>
+                    <li><strong>CanonicalChatRequest</strong> &mdash; model, messages, temperature, top_p, max_tokens, stream, tools, tool_choice, response_format, etc.</li>
+                    <li><strong>CanonicalMessage</strong> &mdash; role (system/user/assistant/tool), content (text or multimodal content blocks, nullable), tool_calls, tool_call_id</li>
                     <li><strong>ContentBlock</strong> &mdash; TextContent, ImageUrlContent, or ImageBase64Content</li>
+                    <li><strong>CanonicalToolCall</strong> / <strong>CanonicalFunctionCall</strong> &mdash; tool call with id, function name, and arguments (JSON string)</li>
+                    <li><strong>CanonicalToolDefinition</strong> &mdash; tool definition with function name, description, and parameters schema</li>
                     <li><strong>CanonicalEmbeddingRequest</strong> &mdash; model, input, encoding_format, dimensions</li>
-                    <li><strong>CanonicalChatResponse</strong> / <strong>CanonicalStreamChunk</strong> &mdash; response and streaming types</li>
+                    <li><strong>CanonicalChatResponse</strong> / <strong>CanonicalStreamChunk</strong> &mdash; response and streaming types (including tool call deltas)</li>
                 </ul>
 
                 <h3>Key Translation Mappings</h3>
                 <table class="table table-bordered table-sm">
                     <thead class="table-light">
-                        <tr><th>Concept</th><th>OpenAI Format</th><th>Ollama Format</th><th>Canonical</th></tr>
+                        <tr><th>Concept</th><th>OpenAI</th><th>Ollama</th><th>Anthropic</th><th>Canonical</th></tr>
                     </thead>
                     <tbody>
-                        <tr><td>Max tokens</td><td><code>max_tokens</code></td><td><code>options.num_predict</code></td><td><code>max_tokens</code></td></tr>
-                        <tr><td>Streaming default</td><td><code>false</code></td><td><code>true</code></td><td>&mdash;</td></tr>
-                        <tr><td>JSON mode</td><td><code>response_format: {"type": "json_object"}</code></td><td><code>format: "json"</code></td><td><code>response_format.type = JSON_OBJECT</code></td></tr>
-                        <tr><td>JSON schema</td><td><code>response_format: {"type": "json_schema", "json_schema": {...}}</code></td><td><code>format: {schema}</code></td><td><code>response_format.type = JSON_SCHEMA</code></td></tr>
-                        <tr><td>Parameters</td><td>Top-level fields</td><td><code>options</code> dict</td><td>Top-level fields</td></tr>
-                        <tr><td>Images</td><td><code>image_url</code> content block with URL or data URI</td><td><code>images</code> array (base64 strings)</td><td><code>ImageBase64Content</code> / <code>ImageUrlContent</code></td></tr>
-                        <tr><td>Stream format</td><td>Server-Sent Events (<code>data: {...}</code>)</td><td>Line-delimited JSON (NDJSON)</td><td><code>CanonicalStreamChunk</code></td></tr>
+                        <tr><td>Max tokens</td><td><code>max_tokens</code></td><td><code>options.num_predict</code></td><td><code>max_tokens</code> (required)</td><td><code>max_tokens</code></td></tr>
+                        <tr><td>Stream default</td><td><code>false</code></td><td><code>true</code></td><td><code>false</code></td><td>&mdash;</td></tr>
+                        <tr><td>System prompt</td><td><code>messages</code> with <code>role: system</code></td><td><code>messages</code> with <code>role: system</code></td><td>Top-level <code>system</code> field</td><td><code>CanonicalMessage(role=SYSTEM)</code></td></tr>
+                        <tr><td>Stop sequences</td><td><code>stop</code></td><td><code>options.stop</code></td><td><code>stop_sequences</code></td><td><code>stop</code></td></tr>
+                        <tr><td>JSON schema</td><td><code>response_format</code></td><td><code>format: {schema}</code></td><td><code>output_config.format</code></td><td><code>response_format</code></td></tr>
+                        <tr><td>Parameters</td><td>Top-level fields</td><td><code>options</code> dict</td><td>Top-level fields</td><td>Top-level fields</td></tr>
+                        <tr><td>Images</td><td><code>image_url</code> block</td><td><code>images</code> array (base64)</td><td><code>image</code> block with <code>source</code></td><td><code>ImageBase64Content</code> / <code>ImageUrlContent</code></td></tr>
+                        <tr><td>Tool definitions</td><td><code>tools</code></td><td><code>tools</code></td><td><code>tools</code> (with <code>input_schema</code>)</td><td><code>tools</code> (<code>CanonicalToolDefinition</code>)</td></tr>
+                        <tr><td>Tool choice</td><td><code>tool_choice</code></td><td>&mdash;</td><td><code>tool_choice</code> (<code>auto</code>/<code>any</code>/<code>tool</code>)</td><td><code>tool_choice</code></td></tr>
+                        <tr><td>Tool calls</td><td><code>tool_calls</code> (JSON string args)</td><td><code>tool_calls</code> (dict args)</td><td><code>tool_use</code> content blocks</td><td><code>CanonicalToolCall</code> (JSON string args)</td></tr>
+                        <tr><td>Tool results</td><td><code>role: "tool"</code> + <code>tool_call_id</code></td><td>&mdash;</td><td><code>tool_result</code> content blocks</td><td><code>CanonicalMessage(role=TOOL, tool_call_id)</code></td></tr>
+                        <tr><td>Thinking mode</td><td>&mdash;</td><td>&mdash;</td><td><code>thinking.type</code></td><td><code>think</code> (bool)</td></tr>
+                        <tr><td>User ID</td><td><code>user</code></td><td>&mdash;</td><td><code>metadata.user_id</code></td><td><code>user</code></td></tr>
+                        <tr><td>Stream format</td><td>SSE (<code>data: {...}</code>)</td><td>NDJSON</td><td>SSE (Anthropic events)</td><td><code>CanonicalStreamChunk</code></td></tr>
                     </tbody>
                 </table>
 
@@ -833,6 +940,7 @@ Ollama Request --&gt; OllamaInTranslator --&gt; CanonicalChatRequest
                     <tbody>
                         <tr><td><code>OpenAIInTranslator</code></td><td>API &rarr; Canonical</td><td>Translates incoming OpenAI-format requests</td></tr>
                         <tr><td><code>OllamaInTranslator</code></td><td>API &rarr; Canonical</td><td>Translates incoming Ollama-format requests</td></tr>
+                        <tr><td><code>AnthropicInTranslator</code></td><td>API &rarr; Canonical</td><td>Translates incoming Anthropic Messages API requests; also formats responses and SSE stream events back to Anthropic format</td></tr>
                         <tr><td><code>OllamaOutTranslator</code></td><td>Canonical &rarr; Backend</td><td>Translates outgoing requests to Ollama backends</td></tr>
                         <tr><td><code>VLLMOutTranslator</code></td><td>Canonical &rarr; Backend</td><td>Translates outgoing requests to vLLM backends</td></tr>
                     </tbody>

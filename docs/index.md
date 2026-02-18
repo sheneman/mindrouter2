@@ -29,10 +29,10 @@ MindRouter2 is a production-ready **LLM inference load balancer and translation 
 
 MindRouter2 sits between API consumers and GPU inference servers, providing:
 
-- **Unified API Gateway** -- OpenAI-compatible `/v1/*` endpoints and Ollama-compatible `/api/*` endpoints, both backed by the same pool of inference servers.
+- **Unified API Gateway** -- OpenAI-compatible `/v1/*`, Ollama-compatible `/api/*`, and Anthropic-compatible `/anthropic/v1/*` endpoints, all backed by the same pool of inference servers.
 - **Cross-Engine Routing** -- A request arriving as OpenAI format can be served by an Ollama backend (and vice versa). The translation layer handles all protocol conversion transparently.
 - **Fair-Share Scheduling** -- Weighted Deficit Round Robin (WDRR) ensures equitable GPU access across users with different roles and priorities.
-- **Multi-Modal Support** -- Text chat, text completion, embeddings, vision-language models, and structured JSON outputs.
+- **Multi-Modal Support** -- Text chat, text completion, embeddings, vision-language models, structured JSON outputs, and tool calling (function calling).
 - **Per-User Quotas** -- Token budgets, requests-per-minute limits, and concurrent request caps, all configurable by role.
 - **Full Audit Logging** -- Every prompt, response, and token count is recorded for compliance and review.
 - **Real-Time GPU Telemetry** -- Per-GPU utilization, memory, temperature, and power metrics via lightweight sidecar agents.
@@ -51,15 +51,15 @@ MindRouter2 sits between API consumers and GPU inference servers, providing:
 MindRouter2 follows a layered architecture:
 
 ```
-Client Request (OpenAI or Ollama format)
+Client Request (OpenAI, Ollama, or Anthropic format)
         │
         ▼
 ┌─────────────────────────────┐
-│     API Gateway Layer       │  ← /v1/*, /api/*, /api/admin/*
+│     API Gateway Layer       │  ← /v1/*, /api/*, /anthropic/*, /api/admin/*
 ├─────────────────────────────┤
 │  Authentication & Quotas    │  ← API key verification, rate limiting
 ├─────────────────────────────┤
-│    Translation Layer        │  ← OpenAI ↔ Canonical ↔ Ollama/vLLM
+│    Translation Layer        │  ← OpenAI/Ollama/Anthropic ↔ Canonical ↔ Ollama/vLLM
 ├─────────────────────────────┤
 │   Fair-Share Scheduler      │  ← WDRR with per-user deficit counters
 ├─────────────────────────────┤
@@ -294,6 +294,29 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 }
 ```
 
+**Tool Calling (Function Calling):**
+```json
+{
+  "model": "llama3.2",
+  "messages": [{"role": "user", "content": "What's the weather in Seattle?"}],
+  "tools": [{
+    "type": "function",
+    "function": {
+      "name": "get_weather",
+      "description": "Get the current weather",
+      "parameters": {
+        "type": "object",
+        "properties": {"city": {"type": "string"}},
+        "required": ["city"]
+      }
+    }
+  }],
+  "tool_choice": "auto"
+}
+```
+
+When the model decides to call a tool, the response includes `tool_calls` with `finish_reason: "tool_calls"`. Submit the tool result back as a `role: "tool"` message with the matching `tool_call_id`.
+
 #### Embeddings
 
 ```bash
@@ -361,6 +384,90 @@ curl -X POST http://localhost:8000/api/generate \
   -H "Content-Type: application/json" \
   -d '{"model": "llama3.2", "prompt": "Why is the sky blue?"}'
 ```
+
+### Anthropic-Compatible Endpoint
+
+This endpoint accepts and returns data in the Anthropic Messages API format. Anthropic SDK clients can be pointed at MindRouter2 by setting `base_url`.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/anthropic/v1/messages` | API Key | Anthropic Messages API (streaming and non-streaming) |
+
+#### Messages
+
+```bash
+curl -X POST http://localhost:8000/anthropic/v1/messages \
+  -H "Authorization: Bearer mr2_your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "llama3.2",
+    "max_tokens": 500,
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
+
+**Response:**
+```json
+{
+  "id": "msg_abc123...",
+  "type": "message",
+  "role": "assistant",
+  "model": "llama3.2",
+  "content": [
+    {"type": "text", "text": "Hello! How can I help you today?"}
+  ],
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 10,
+    "output_tokens": 12
+  }
+}
+```
+
+**Streaming** -- Set `"stream": true` to receive Anthropic SSE events (`message_start`, `content_block_delta`, `message_stop`, etc.):
+
+```bash
+curl -X POST http://localhost:8000/anthropic/v1/messages \
+  -H "Authorization: Bearer mr2_your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "llama3.2", "max_tokens": 500, "messages": [{"role": "user", "content": "Hi"}], "stream": true}'
+```
+
+**System Prompt:**
+```json
+{
+  "model": "llama3.2",
+  "max_tokens": 500,
+  "system": "You are a helpful assistant.",
+  "messages": [{"role": "user", "content": "Hello!"}]
+}
+```
+
+**SDK Usage (Python):**
+```python
+import anthropic
+client = anthropic.Anthropic(
+    base_url="http://localhost:8000/anthropic",
+    api_key="mr2_your-api-key",
+)
+message = client.messages.create(
+    model="llama3.2",
+    max_tokens=500,
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+```
+
+**Supported features:**
+- System prompts (string or content block array)
+- Multimodal inputs (base64 and URL images)
+- Tool calling -- `tools` with `input_schema`, `tool_choice` (`auto`/`any`/`tool`), `tool_use`/`tool_result` content blocks, streaming tool use with `input_json_delta`
+- Thinking/reasoning mode (`thinking.type`: `enabled`, `adaptive`, `disabled`)
+- Structured output via `output_config.format` with `type: "json_schema"`
+- Parameters: `max_tokens`, `temperature`, `top_p`, `top_k`, `stop_sequences`, `stream`
+- `metadata.user_id` mapping
+
+> **Note:** This is inbound-only -- there are no Anthropic backends. Requests are translated to canonical format and routed to Ollama/vLLM backends like any other request.
 
 ### Health & Metrics Endpoints
 
@@ -646,45 +753,57 @@ For the complete algorithm specification, see **[scheduler.md](scheduler.md)**.
 
 ## Translation Layer
 
-MindRouter2's translation layer enables cross-engine routing: a request arriving in OpenAI format can be served by an Ollama backend, and vice versa. All translation passes through a **canonical internal schema**.
+MindRouter2's translation layer enables cross-engine routing: a request arriving in OpenAI, Ollama, or Anthropic format can be served by any Ollama or vLLM backend. All translation passes through a **canonical internal schema**.
 
 ### Request Flow
 
 ```
-OpenAI Request ──→ OpenAIInTranslator ──→ CanonicalChatRequest
-                                                │
-Ollama Request ──→ OllamaInTranslator ──→ CanonicalChatRequest
-                                                │
-                                                ▼
-                                         [Scheduler selects backend]
-                                                │
-                        ┌───────────────────────┴───────────────┐
-                        ▼                                       ▼
-              OllamaOutTranslator                     VLLMOutTranslator
-              (Ollama backend)                        (vLLM backend, OpenAI format)
+OpenAI Request    ──→ OpenAIInTranslator    ──→ CanonicalChatRequest
+                                                       │
+Ollama Request    ──→ OllamaInTranslator    ──→ CanonicalChatRequest
+                                                       │
+Anthropic Request ──→ AnthropicInTranslator ──→ CanonicalChatRequest
+                                                       │
+                                                       ▼
+                                                [Scheduler selects backend]
+                                                       │
+                           ┌───────────────────────────┴───────────────┐
+                           ▼                                           ▼
+                 OllamaOutTranslator                         VLLMOutTranslator
+                 (Ollama backend)                            (vLLM backend, OpenAI format)
 ```
 
 ### Canonical Schemas
 
 The canonical internal representation (`backend/app/core/canonical_schemas.py`) includes:
 
-- **CanonicalChatRequest** -- model, messages, temperature, top_p, max_tokens, stream, response_format, etc.
-- **CanonicalMessage** -- role (system/user/assistant/tool), content (text or multimodal content blocks)
+- **CanonicalChatRequest** -- model, messages, temperature, top_p, max_tokens, stream, tools, tool_choice, response_format, etc.
+- **CanonicalMessage** -- role (system/user/assistant/tool), content (text or multimodal content blocks, nullable), tool_calls, tool_call_id
 - **ContentBlock** -- TextContent, ImageUrlContent, or ImageBase64Content
+- **CanonicalToolCall** / **CanonicalFunctionCall** -- tool call with id, function name, and arguments (JSON string)
+- **CanonicalToolDefinition** -- tool definition with function name, description, and parameters schema
 - **CanonicalEmbeddingRequest** -- model, input, encoding_format, dimensions
-- **CanonicalChatResponse** / **CanonicalStreamChunk** -- response and streaming types
+- **CanonicalChatResponse** / **CanonicalStreamChunk** -- response and streaming types (including tool call deltas)
 
 ### Key Translation Mappings
 
-| Concept | OpenAI Format | Ollama Format | Canonical |
-|---------|---------------|---------------|-----------|
-| Max tokens | `max_tokens` | `options.num_predict` | `max_tokens` |
-| Streaming default | `false` | `true` | -- |
-| JSON mode | `response_format: {"type": "json_object"}` | `format: "json"` | `response_format.type = JSON_OBJECT` |
-| JSON schema | `response_format: {"type": "json_schema", "json_schema": {...}}` | `format: {schema}` | `response_format.type = JSON_SCHEMA` |
-| Parameters | Top-level fields | `options` dict | Top-level fields |
-| Images | `image_url` content block with URL or data URI | `images` array (base64 strings) | `ImageBase64Content` / `ImageUrlContent` |
-| Stream format | Server-Sent Events (`data: {...}`) | Line-delimited JSON (NDJSON) | `CanonicalStreamChunk` |
+| Concept | OpenAI Format | Ollama Format | Anthropic Format | Canonical |
+|---------|---------------|---------------|------------------|-----------|
+| Max tokens | `max_tokens` | `options.num_predict` | `max_tokens` (required) | `max_tokens` |
+| Streaming default | `false` | `true` | `false` | -- |
+| System prompt | `messages` with `role: system` | `messages` with `role: system` | Top-level `system` field | `CanonicalMessage(role=SYSTEM)` |
+| JSON mode | `response_format: {"type": "json_object"}` | `format: "json"` | -- | `response_format.type = JSON_OBJECT` |
+| JSON schema | `response_format: {"type": "json_schema", ...}` | `format: {schema}` | `output_config.format: {"type": "json_schema", ...}` | `response_format.type = JSON_SCHEMA` |
+| Parameters | Top-level fields | `options` dict | Top-level fields | Top-level fields |
+| Stop sequences | `stop` | `options.stop` | `stop_sequences` | `stop` |
+| Images | `image_url` content block | `images` array (base64) | `image` block with `source` | `ImageBase64Content` / `ImageUrlContent` |
+| Tool definitions | `tools` | `tools` | `tools` (with `input_schema`) | `tools` (`CanonicalToolDefinition`) |
+| Tool choice | `tool_choice` | -- | `tool_choice` (`auto`/`any`/`tool`) | `tool_choice` |
+| Tool calls | `tool_calls` (JSON string args) | `tool_calls` (dict args) | `tool_use` content blocks | `CanonicalToolCall` (JSON string args) |
+| Tool results | `role: "tool"` + `tool_call_id` | -- | `tool_result` content blocks | `CanonicalMessage(role=TOOL, tool_call_id)` |
+| Thinking mode | -- | -- | `thinking.type` (enabled/adaptive/disabled) | `think` (bool) |
+| User ID | `user` | -- | `metadata.user_id` | `user` |
+| Stream format | SSE (`data: {...}`) | NDJSON | SSE (Anthropic events) | `CanonicalStreamChunk` |
 
 ### Translators
 
@@ -692,6 +811,7 @@ The canonical internal representation (`backend/app/core/canonical_schemas.py`) 
 |------------|-----------|---------|
 | `OpenAIInTranslator` | API → Canonical | Translates incoming OpenAI-format requests |
 | `OllamaInTranslator` | API → Canonical | Translates incoming Ollama-format requests |
+| `AnthropicInTranslator` | API → Canonical | Translates incoming Anthropic Messages API requests; also formats responses and SSE stream events back to Anthropic format |
 | `OllamaOutTranslator` | Canonical → Backend | Translates outgoing requests to Ollama backends |
 | `VLLMOutTranslator` | Canonical → Backend | Translates outgoing requests to vLLM backends |
 

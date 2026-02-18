@@ -114,6 +114,10 @@ async def _stream_anthropic_events(
 
     Takes the OpenAI-format SSE byte stream from InferenceService and
     re-emits it as Anthropic Messages API streaming events.
+
+    Handles both text content and tool_use blocks. Text block emission is
+    deferred until actual text content arrives, allowing tool-call-only
+    responses to work correctly.
     """
     fmt = AnthropicInTranslator.format_stream_event
 
@@ -132,14 +136,13 @@ async def _stream_anthropic_events(
         },
     })
 
-    # Emit content_block_start
-    yield fmt("content_block_start", {
-        "type": "content_block_start",
-        "index": 0,
-        "content_block": {"type": "text", "text": ""},
-    })
-
     output_tokens = 0
+    content_block_index = 0
+    text_block_started = False
+    # Track active tool blocks: tool_call_index → content_block_index
+    active_tool_blocks: dict = {}
+    # Accumulate tool call argument fragments per tool call index
+    tool_arg_buffers: dict = {}
 
     async for chunk_bytes in openai_stream:
         chunk_str = chunk_bytes.decode("utf-8") if isinstance(chunk_bytes, bytes) else chunk_bytes
@@ -168,24 +171,88 @@ async def _stream_anthropic_events(
             choice = choices[0]
             delta = choice.get("delta", {})
             content = delta.get("content")
+            tool_calls = delta.get("tool_calls")
             finish_reason = choice.get("finish_reason")
 
+            # Handle text content
             if content:
+                if not text_block_started:
+                    yield fmt("content_block_start", {
+                        "type": "content_block_start",
+                        "index": content_block_index,
+                        "content_block": {"type": "text", "text": ""},
+                    })
+                    text_block_started = True
+
                 output_tokens += 1  # Approximate token count
                 yield fmt("content_block_delta", {
                     "type": "content_block_delta",
-                    "index": 0,
+                    "index": content_block_index,
                     "delta": {"type": "text_delta", "text": content},
                 })
+
+            # Handle tool calls
+            if tool_calls:
+                for tc_delta in tool_calls:
+                    tc_index = tc_delta.get("index", 0)
+                    tc_func = tc_delta.get("function", {})
+
+                    if tc_index not in active_tool_blocks:
+                        # New tool call — close text block if open
+                        if text_block_started:
+                            yield fmt("content_block_stop", {
+                                "type": "content_block_stop",
+                                "index": content_block_index,
+                            })
+                            content_block_index += 1
+                            text_block_started = False
+
+                        # Assign a content block index
+                        active_tool_blocks[tc_index] = content_block_index
+                        tool_arg_buffers[tc_index] = ""
+                        content_block_index += 1
+
+                        # Emit content_block_start for this tool_use
+                        yield fmt("content_block_start", {
+                            "type": "content_block_start",
+                            "index": active_tool_blocks[tc_index],
+                            "content_block": {
+                                "type": "tool_use",
+                                "id": tc_delta.get("id", f"toolu_{tc_index}"),
+                                "name": tc_func.get("name", ""),
+                                "input": {},
+                            },
+                        })
+
+                    # Emit argument fragments as input_json_delta
+                    args_fragment = tc_func.get("arguments", "")
+                    if args_fragment:
+                        tool_arg_buffers[tc_index] += args_fragment
+                        yield fmt("content_block_delta", {
+                            "type": "content_block_delta",
+                            "index": active_tool_blocks[tc_index],
+                            "delta": {
+                                "type": "input_json_delta",
+                                "partial_json": args_fragment,
+                            },
+                        })
 
             if finish_reason:
                 stop_reason = AnthropicInTranslator._map_finish_reason(finish_reason)
 
-                # Emit content_block_stop
-                yield fmt("content_block_stop", {
-                    "type": "content_block_stop",
-                    "index": 0,
-                })
+                # Close text block if still open (text block is always at index 0 when present)
+                if text_block_started:
+                    yield fmt("content_block_stop", {
+                        "type": "content_block_stop",
+                        "index": 0,
+                    })
+
+                # Close all open tool blocks
+                for tc_idx in sorted(active_tool_blocks.keys()):
+                    yield fmt("content_block_stop", {
+                        "type": "content_block_stop",
+                        "index": active_tool_blocks[tc_idx],
+                    })
 
                 # Emit message_delta with stop_reason and usage
                 usage = data.get("usage", {})
@@ -205,10 +272,16 @@ async def _stream_anthropic_events(
                 return
 
     # If stream ends without explicit finish_reason, close gracefully
-    yield fmt("content_block_stop", {
-        "type": "content_block_stop",
-        "index": 0,
-    })
+    if text_block_started:
+        yield fmt("content_block_stop", {
+            "type": "content_block_stop",
+            "index": 0,
+        })
+    for tc_idx in sorted(active_tool_blocks.keys()):
+        yield fmt("content_block_stop", {
+            "type": "content_block_stop",
+            "index": active_tool_blocks[tc_idx],
+        })
     yield fmt("message_delta", {
         "type": "message_delta",
         "delta": {"stop_reason": "end_turn", "stop_sequence": None},

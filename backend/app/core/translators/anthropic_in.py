@@ -19,7 +19,10 @@ from typing import Any, Dict, List, Optional
 
 from backend.app.core.canonical_schemas import (
     CanonicalChatRequest,
+    CanonicalFunctionCall,
     CanonicalMessage,
+    CanonicalToolCall,
+    CanonicalToolDefinition,
     ContentBlock,
     ImageBase64Content,
     ImageUrlContent,
@@ -52,8 +55,48 @@ class AnthropicInTranslator:
             messages.append(system_msg)
 
         # Translate conversation messages
+        # A single Anthropic message can expand to multiple canonical messages
+        # (e.g. a user message with mixed text + tool_results)
         for msg in data.get("messages", []):
-            messages.append(AnthropicInTranslator._translate_message(msg))
+            translated = AnthropicInTranslator._translate_message(msg)
+            if isinstance(translated, list):
+                messages.extend(translated)
+            else:
+                messages.append(translated)
+
+        # Handle tools
+        tools = None
+        if "tools" in data:
+            tools = [
+                CanonicalToolDefinition(
+                    type="function",
+                    function={
+                        "name": t["name"],
+                        "description": t.get("description", ""),
+                        "parameters": t.get("input_schema", {}),
+                    },
+                )
+                for t in data["tools"]
+            ]
+
+        # Handle tool_choice
+        tool_choice = None
+        if "tool_choice" in data:
+            tc = data["tool_choice"]
+            if isinstance(tc, dict):
+                tc_type = tc.get("type")
+                if tc_type == "auto":
+                    tool_choice = "auto"
+                elif tc_type == "any":
+                    tool_choice = "required"
+                elif tc_type == "tool":
+                    tool_choice = {
+                        "type": "function",
+                        "function": {"name": tc["name"]},
+                    }
+            elif isinstance(tc, str):
+                # Already a string like "auto"
+                tool_choice = tc
 
         # Handle structured output via output_config
         response_format = None
@@ -95,6 +138,8 @@ class AnthropicInTranslator:
             stream=data.get("stream", False),
             stop=stop,
             think=think,
+            tools=tools,
+            tool_choice=tool_choice,
             response_format=response_format,
             user=user,
         )
@@ -112,15 +157,41 @@ class AnthropicInTranslator:
         """
         # Extract content from OpenAI format
         choices = response.get("choices", [])
-        content_text = ""
+        content_blocks = []
         finish_reason = "end_turn"
         if choices:
             choice = choices[0]
             message = choice.get("message", {})
-            content_text = message.get("content", "")
+            content_text = message.get("content") or ""
             finish_reason = AnthropicInTranslator._map_finish_reason(
                 choice.get("finish_reason", "stop")
             )
+
+            # Add text block if there's text content
+            if content_text:
+                content_blocks.append({"type": "text", "text": content_text})
+
+            # Add tool_use blocks if present
+            tool_calls = message.get("tool_calls", [])
+            if tool_calls:
+                for tc in tool_calls:
+                    func = tc.get("function", {})
+                    args = func.get("arguments", "")
+                    # Parse JSON string arguments to dict for Anthropic format
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except (json.JSONDecodeError, TypeError):
+                            args = {}
+                    content_blocks.append({
+                        "type": "tool_use",
+                        "id": tc.get("id", ""),
+                        "name": func.get("name", ""),
+                        "input": args,
+                    })
+
+        if not content_blocks:
+            content_blocks.append({"type": "text", "text": ""})
 
         # Map usage fields
         usage = response.get("usage", {})
@@ -132,7 +203,7 @@ class AnthropicInTranslator:
             "type": "message",
             "role": "assistant",
             "model": model,
-            "content": [{"type": "text", "text": content_text}],
+            "content": content_blocks,
             "stop_reason": finish_reason,
             "stop_sequence": None,
             "usage": {
@@ -179,8 +250,12 @@ class AnthropicInTranslator:
         return CanonicalMessage(role=MessageRole.SYSTEM, content=str(system))
 
     @staticmethod
-    def _translate_message(msg: Dict[str, Any]) -> CanonicalMessage:
-        """Translate a single Anthropic message to canonical format."""
+    def _translate_message(msg: Dict[str, Any]):
+        """Translate a single Anthropic message to canonical format.
+
+        Returns a single CanonicalMessage or a list of CanonicalMessages
+        (when a user message contains tool_result blocks that need expansion).
+        """
         role = MessageRole(msg["role"])
         content = msg.get("content")
 
@@ -190,15 +265,84 @@ class AnthropicInTranslator:
 
         # Array of content blocks
         if isinstance(content, list):
+            # Separate tool_use, tool_result, and regular content blocks
             content_blocks: List[ContentBlock] = []
+            tool_calls: List[CanonicalToolCall] = []
+            tool_results: List[Dict[str, Any]] = []
+
             for item in content:
                 if isinstance(item, str):
                     content_blocks.append(TextContent(text=item))
                 elif isinstance(item, dict):
-                    block = AnthropicInTranslator._translate_content_block(item)
-                    if block:
-                        content_blocks.append(block)
-            return CanonicalMessage(role=role, content=content_blocks)
+                    item_type = item.get("type")
+
+                    if item_type == "tool_use":
+                        # Assistant's tool call → CanonicalToolCall
+                        args = item.get("input", {})
+                        tool_calls.append(
+                            CanonicalToolCall(
+                                id=item.get("id", ""),
+                                type="function",
+                                function=CanonicalFunctionCall(
+                                    name=item.get("name", ""),
+                                    arguments=json.dumps(args) if isinstance(args, dict) else str(args),
+                                ),
+                            )
+                        )
+                    elif item_type == "tool_result":
+                        # User's tool result → will expand to separate TOOL messages
+                        tool_results.append(item)
+                    else:
+                        block = AnthropicInTranslator._translate_content_block(item)
+                        if block:
+                            content_blocks.append(block)
+
+            # Assistant message with tool_use blocks
+            if role == MessageRole.ASSISTANT and tool_calls:
+                text_content = None
+                if content_blocks:
+                    text_content = content_blocks
+                elif not content_blocks:
+                    # No text content, content can be None
+                    text_content = None
+                return CanonicalMessage(
+                    role=role,
+                    content=text_content,
+                    tool_calls=tool_calls,
+                )
+
+            # User message with tool_result blocks → expand
+            if tool_results:
+                result_messages: list = []
+                # If there's text content too, emit that first as a user message
+                if content_blocks:
+                    result_messages.append(
+                        CanonicalMessage(role=MessageRole.USER, content=content_blocks)
+                    )
+                # Each tool_result becomes a separate TOOL role message
+                for tr in tool_results:
+                    tr_content = tr.get("content", "")
+                    # tool_result content can be string or array of blocks
+                    if isinstance(tr_content, list):
+                        text_parts = []
+                        for block in tr_content:
+                            if isinstance(block, dict) and block.get("type") == "text":
+                                text_parts.append(block.get("text", ""))
+                            elif isinstance(block, str):
+                                text_parts.append(block)
+                        tr_content = " ".join(text_parts) if text_parts else ""
+                    result_messages.append(
+                        CanonicalMessage(
+                            role=MessageRole.TOOL,
+                            content=tr_content if tr_content else "",
+                            tool_call_id=tr.get("tool_use_id", ""),
+                        )
+                    )
+                return result_messages
+
+            if content_blocks:
+                return CanonicalMessage(role=role, content=content_blocks)
+            return CanonicalMessage(role=role, content="")
 
         return CanonicalMessage(role=role, content=content or "")
 
@@ -227,11 +371,7 @@ class AnthropicInTranslator:
                     }
                 )
 
-        elif item_type in ("tool_use", "tool_result"):
-            # Lossy conversion: represent as text for v1
-            text = item.get("text", "") or json.dumps(item.get("input", item.get("content", "")))
-            return TextContent(text=f"[{item_type}] {text}")
-
+        # tool_use and tool_result are handled in _translate_message directly
         return None
 
     @staticmethod

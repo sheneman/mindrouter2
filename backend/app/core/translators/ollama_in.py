@@ -15,13 +15,17 @@
 """Ollama API format to canonical schema translator."""
 
 import base64
+import json
 from typing import Any, Dict, List, Optional
 
 from backend.app.core.canonical_schemas import (
     CanonicalChatRequest,
     CanonicalCompletionRequest,
     CanonicalEmbeddingRequest,
+    CanonicalFunctionCall,
     CanonicalMessage,
+    CanonicalToolCall,
+    CanonicalToolDefinition,
     ContentBlock,
     ImageBase64Content,
     MessageRole,
@@ -77,6 +81,17 @@ class OllamaInTranslator:
             k: v for k, v in options.items() if k not in _KNOWN_OPTION_KEYS
         } or None
 
+        # Handle tools
+        tools = None
+        if "tools" in data:
+            tools = [
+                CanonicalToolDefinition(
+                    type=t.get("type", "function"),
+                    function=t["function"],
+                )
+                for t in data["tools"]
+            ]
+
         return CanonicalChatRequest(
             model=data["model"],
             messages=messages,
@@ -93,6 +108,7 @@ class OllamaInTranslator:
             min_p=options.get("min_p"),
             think=data.get("think"),
             backend_options=backend_options,
+            tools=tools,
             response_format=response_format,
         )
 
@@ -187,6 +203,28 @@ class OllamaInTranslator:
         content = msg.get("content", "")
         images = msg.get("images", [])
 
+        # Extract tool_calls from assistant messages
+        # Ollama uses dict arguments; canonical uses JSON strings
+        tool_calls = None
+        if "tool_calls" in msg and msg["tool_calls"]:
+            tool_calls = []
+            for i, tc in enumerate(msg["tool_calls"]):
+                func = tc.get("function", {})
+                args = func.get("arguments", {})
+                # Convert dict arguments to JSON string
+                if isinstance(args, dict):
+                    args = json.dumps(args)
+                tool_calls.append(
+                    CanonicalToolCall(
+                        id=tc.get("id", f"call_{i}"),
+                        type=tc.get("type", "function"),
+                        function=CanonicalFunctionCall(
+                            name=func.get("name", ""),
+                            arguments=args,
+                        ),
+                    )
+                )
+
         # If there are images, create multimodal content
         if images:
             content_blocks: List[ContentBlock] = []
@@ -204,10 +242,10 @@ class OllamaInTranslator:
                     ImageBase64Content(data=img_data, media_type=media_type)
                 )
 
-            return CanonicalMessage(role=role, content=content_blocks)
+            return CanonicalMessage(role=role, content=content_blocks, tool_calls=tool_calls)
 
         # Simple text message
-        return CanonicalMessage(role=role, content=content)
+        return CanonicalMessage(role=role, content=content, tool_calls=tool_calls)
 
     @staticmethod
     def _translate_format(

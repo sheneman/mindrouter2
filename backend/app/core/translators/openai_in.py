@@ -20,7 +20,10 @@ from backend.app.core.canonical_schemas import (
     CanonicalChatRequest,
     CanonicalCompletionRequest,
     CanonicalEmbeddingRequest,
+    CanonicalFunctionCall,
     CanonicalMessage,
+    CanonicalToolCall,
+    CanonicalToolDefinition,
     ContentBlock,
     ImageBase64Content,
     ImageUrlContent,
@@ -54,6 +57,17 @@ class OpenAIInTranslator:
                 data["response_format"]
             )
 
+        # Handle tools
+        tools = None
+        if "tools" in data:
+            tools = [
+                CanonicalToolDefinition(
+                    type=t.get("type", "function"),
+                    function=t["function"],
+                )
+                for t in data["tools"]
+            ]
+
         return CanonicalChatRequest(
             model=data["model"],
             messages=messages,
@@ -68,6 +82,8 @@ class OpenAIInTranslator:
             top_k=data.get("top_k"),
             repeat_penalty=data.get("repetition_penalty"),  # OpenAI/vLLM name
             min_p=data.get("min_p"),
+            tools=tools,
+            tool_choice=data.get("tool_choice"),
             response_format=response_format,
             n=data.get("n", 1),
             user=data.get("user"),
@@ -126,6 +142,24 @@ class OpenAIInTranslator:
         role = MessageRole(msg["role"])
         content = msg.get("content")
 
+        # Extract tool_calls from assistant messages
+        tool_calls = None
+        if "tool_calls" in msg and msg["tool_calls"]:
+            tool_calls = [
+                CanonicalToolCall(
+                    id=tc["id"],
+                    type=tc.get("type", "function"),
+                    function=CanonicalFunctionCall(
+                        name=tc["function"]["name"],
+                        arguments=tc["function"]["arguments"],
+                    ),
+                )
+                for tc in msg["tool_calls"]
+            ]
+
+        # Extract tool_call_id from tool messages
+        tool_call_id = msg.get("tool_call_id")
+
         # Handle multimodal content
         if isinstance(content, list):
             content_blocks: List[ContentBlock] = []
@@ -140,13 +174,17 @@ class OpenAIInTranslator:
                 role=role,
                 content=content_blocks,
                 name=msg.get("name"),
+                tool_calls=tool_calls,
+                tool_call_id=tool_call_id,
             )
 
-        # Simple text content
+        # Simple text content (content can be None for tool-call-only messages)
         return CanonicalMessage(
             role=role,
-            content=content or "",
+            content=content,
             name=msg.get("name"),
+            tool_calls=tool_calls,
+            tool_call_id=tool_call_id,
         )
 
     @staticmethod

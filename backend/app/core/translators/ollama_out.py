@@ -25,10 +25,12 @@ from backend.app.core.canonical_schemas import (
     CanonicalCompletionRequest,
     CanonicalEmbeddingRequest,
     CanonicalEmbeddingResponse,
+    CanonicalFunctionCall,
     CanonicalMessage,
     CanonicalStreamChunk,
     CanonicalStreamChoice,
     CanonicalStreamDelta,
+    CanonicalToolCall,
     ImageBase64Content,
     ImageUrlContent,
     MessageRole,
@@ -71,6 +73,10 @@ class OllamaOutTranslator:
             format_spec = OllamaOutTranslator._translate_response_format(canonical)
             if format_spec:
                 payload["format"] = format_spec
+
+        # Handle tool calling
+        if canonical.tools:
+            payload["tools"] = [t.model_dump() for t in canonical.tools]
 
         # Thinking mode goes at top level, NOT inside options
         if canonical.think is not None:
@@ -158,13 +164,38 @@ class OllamaOutTranslator:
         """
         message = ollama_response.get("message", {})
 
+        # Parse tool_calls from Ollama response (dict arguments → JSON string)
+        tool_calls = None
+        if "tool_calls" in message and message["tool_calls"]:
+            tool_calls = []
+            for i, tc in enumerate(message["tool_calls"]):
+                func = tc.get("function", {})
+                args = func.get("arguments", {})
+                if isinstance(args, dict):
+                    args = json.dumps(args)
+                tool_calls.append(
+                    CanonicalToolCall(
+                        id=tc.get("id", f"call_{i}"),
+                        type="function",
+                        function=CanonicalFunctionCall(
+                            name=func.get("name", ""),
+                            arguments=args,
+                        ),
+                    )
+                )
+
+        finish_reason = "stop" if ollama_response.get("done") else None
+        if tool_calls:
+            finish_reason = "tool_calls"
+
         choice = CanonicalChoice(
             index=0,
             message=CanonicalMessage(
                 role=MessageRole(message.get("role", "assistant")),
-                content=message.get("content", ""),
+                content=message.get("content") or None,
+                tool_calls=tool_calls,
             ),
-            finish_reason="stop" if ollama_response.get("done") else None,
+            finish_reason=finish_reason,
         )
 
         # Extract usage info
@@ -226,15 +257,42 @@ class OllamaOutTranslator:
                     content = message.get("content", "")
                     is_done = data.get("done", False)
 
+                    # Parse tool_calls from streaming chunk
+                    tc_deltas = None
+                    if "tool_calls" in message and message["tool_calls"]:
+                        from backend.app.core.canonical_schemas import CanonicalStreamToolCallDelta
+                        tc_deltas = []
+                        for i, tc in enumerate(message["tool_calls"]):
+                            func = tc.get("function", {})
+                            args = func.get("arguments", {})
+                            if isinstance(args, dict):
+                                args = json.dumps(args)
+                            tc_deltas.append(
+                                CanonicalStreamToolCallDelta(
+                                    index=i,
+                                    id=tc.get("id", f"call_{i}"),
+                                    type="function",
+                                    function={
+                                        "name": func.get("name", ""),
+                                        "arguments": args,
+                                    },
+                                )
+                            )
+
+                    finish_reason = None
+                    if is_done:
+                        finish_reason = "tool_calls" if tc_deltas else "stop"
+
                     delta = CanonicalStreamDelta(
-                        role=MessageRole.ASSISTANT if content else None,
+                        role=MessageRole.ASSISTANT if content or tc_deltas else None,
                         content=content if content else None,
+                        tool_calls=tc_deltas,
                     )
 
                     choice = CanonicalStreamChoice(
                         index=0,
                         delta=delta,
-                        finish_reason="stop" if is_done else None,
+                        finish_reason=finish_reason,
                     )
 
                     # Include usage in final chunk
@@ -322,7 +380,24 @@ class OllamaOutTranslator:
             if images:
                 result["images"] = images
         else:
-            result["content"] = msg.content
+            result["content"] = msg.content if msg.content is not None else ""
+
+        # Add tool_calls with arguments converted from JSON string to dict
+        if msg.tool_calls:
+            result["tool_calls"] = []
+            for tc in msg.tool_calls:
+                args = tc.function.arguments
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except (json.JSONDecodeError, TypeError):
+                        args = {}
+                result["tool_calls"].append({
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": args,
+                    },
+                })
 
         return result
 
