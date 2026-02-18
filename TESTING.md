@@ -42,6 +42,7 @@
 | `backend/app/tests/unit/test_retry_failover.py` | 12 | Retry logic, exponential backoff, backend failover |
 | `backend/app/tests/unit/test_scheduler.py` | 30 | Fair-share WDRR scheduler, job queue, BackendScorer, HardConstraints |
 | `backend/app/tests/unit/test_quota.py` | 24 | Quota management, token accounting, RPM/concurrent limits, group-based defaults |
+| `backend/app/tests/unit/test_anthropic_translator.py` | 19 | AnthropicIn translator: Messages API request/response, multimodal, thinking, streaming format |
 | `backend/app/tests/unit/test_sidecar_client.py` | 16 | GPU sidecar client: auth, GPU info retrieval, communication |
 | `backend/app/tests/unit/test_accessibility.py` | 96 | WCAG 2.1 Level A/AA: ARIA, semantic HTML, heading hierarchy, forms, sidebar include |
 
