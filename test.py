@@ -456,11 +456,159 @@ def test_ollama(client: httpx.Client, cfg: argparse.Namespace):
 
 
 # ---------------------------------------------------------------------------
-# Section 5 — Cross-Engine Translation
+# Section 5 — Anthropic-Compatible Endpoint
+# ---------------------------------------------------------------------------
+
+def test_anthropic(client: httpx.Client, cfg: argparse.Namespace):
+    section_header("5. Anthropic-Compatible Endpoint")
+    headers = {"Authorization": f"Bearer {cfg.api_key}"}
+    model = cfg.ollama_model
+
+    # POST /anthropic/v1/messages — non-streaming
+    name = "POST /anthropic/v1/messages (non-streaming)"
+    try:
+        r = client.post("/anthropic/v1/messages", headers=headers, json={
+            "model": model,
+            "max_tokens": 32,
+            "messages": [{"role": "user", "content": "Say hello in exactly 3 words."}],
+        })
+        body = r.json()
+        if r.status_code == 200 and body.get("type") == "message" and "content" in body:
+            content = body["content"][0]["text"][:60]
+            record("pass", name, f"response={content!r}")
+        else:
+            record("fail", name, f"status={r.status_code} body={r.text[:200]}")
+    except Exception as e:
+        record("fail", name, str(e))
+
+    # POST /anthropic/v1/messages — streaming
+    name = "POST /anthropic/v1/messages (streaming)"
+    try:
+        with client.stream("POST", "/anthropic/v1/messages", headers=headers, json={
+            "model": model,
+            "max_tokens": 32,
+            "stream": True,
+            "messages": [{"role": "user", "content": "Say hi."}],
+        }) as r:
+            if r.status_code != 200:
+                record("fail", name, f"status={r.status_code}")
+            else:
+                events = []
+                saw_stop = False
+                for line in r.iter_lines():
+                    if line.startswith("event: "):
+                        event_type = line[7:].strip()
+                        events.append(event_type)
+                        if event_type == "message_stop":
+                            saw_stop = True
+                deltas = sum(1 for e in events if e == "content_block_delta")
+                if saw_stop and deltas > 0:
+                    record("pass", name, f"{deltas} deltas, saw message_stop")
+                else:
+                    record("fail", name, f"deltas={deltas} stop={saw_stop} events={events}")
+    except Exception as e:
+        record("fail", name, str(e))
+
+    # POST /anthropic/v1/messages — with system prompt
+    name = "POST /anthropic/v1/messages (system prompt)"
+    try:
+        r = client.post("/anthropic/v1/messages", headers=headers, json={
+            "model": model,
+            "max_tokens": 32,
+            "system": "You are a pirate. Always respond in pirate speak.",
+            "messages": [{"role": "user", "content": "Say hello."}],
+        })
+        body = r.json()
+        if r.status_code == 200 and body.get("type") == "message":
+            content = body["content"][0]["text"][:60]
+            record("pass", name, f"response={content!r}")
+        else:
+            record("fail", name, f"status={r.status_code} body={r.text[:200]}")
+    except Exception as e:
+        record("fail", name, str(e))
+
+    # POST /anthropic/v1/messages — with parameters
+    name = "POST /anthropic/v1/messages (temperature, top_p, stop_sequences)"
+    try:
+        r = client.post("/anthropic/v1/messages", headers=headers, json={
+            "model": model,
+            "max_tokens": 16,
+            "temperature": 0.1,
+            "top_p": 0.9,
+            "stop_sequences": ["END"],
+            "messages": [{"role": "user", "content": "Say ok."}],
+        })
+        body = r.json()
+        if r.status_code == 200 and body.get("type") == "message":
+            record("pass", name, f"{r.status_code}")
+        else:
+            record("fail", name, f"status={r.status_code} body={r.text[:200]}")
+    except Exception as e:
+        record("fail", name, str(e))
+
+    # POST /anthropic/v1/messages — response format validation
+    name = "POST /anthropic/v1/messages (response format)"
+    try:
+        r = client.post("/anthropic/v1/messages", headers=headers, json={
+            "model": model,
+            "max_tokens": 32,
+            "messages": [{"role": "user", "content": "Say hi."}],
+        })
+        body = r.json()
+        ok = (
+            r.status_code == 200
+            and body.get("type") == "message"
+            and body.get("role") == "assistant"
+            and body.get("stop_reason") in ("end_turn", "max_tokens")
+            and "usage" in body
+            and "input_tokens" in body["usage"]
+            and "output_tokens" in body["usage"]
+        )
+        if ok:
+            record("pass", name, f"stop_reason={body['stop_reason']} usage={body['usage']}")
+        else:
+            record("fail", name, f"status={r.status_code} body={json.dumps(body)[:200]}")
+    except Exception as e:
+        record("fail", name, str(e))
+
+    # POST /anthropic/v1/messages — auth required
+    name = "POST /anthropic/v1/messages (no auth → 401)"
+    try:
+        r = client.post("/anthropic/v1/messages", json={
+            "model": model,
+            "max_tokens": 10,
+            "messages": [{"role": "user", "content": "hi"}],
+        })
+        if r.status_code in (401, 403):
+            record("pass", name, f"{r.status_code}")
+        else:
+            record("fail", name, f"expected 401/403, got {r.status_code}")
+    except Exception as e:
+        record("fail", name, str(e))
+
+    # POST /anthropic/v1/messages — vLLM model via Anthropic endpoint
+    name = f"POST /anthropic/v1/messages (vLLM model: {cfg.vllm_model})"
+    try:
+        r = client.post("/anthropic/v1/messages", headers=headers, json={
+            "model": cfg.vllm_model,
+            "max_tokens": 16,
+            "messages": [{"role": "user", "content": "Say ok."}],
+        })
+        body = r.json()
+        if r.status_code == 200 and body.get("type") == "message":
+            record("pass", name, f"{r.status_code}")
+        else:
+            record("fail", name, f"status={r.status_code} body={r.text[:200]}")
+    except Exception as e:
+        record("fail", name, str(e))
+
+
+# ---------------------------------------------------------------------------
+# Section 6 — Cross-Engine Translation
 # ---------------------------------------------------------------------------
 
 def test_cross_engine(client: httpx.Client, cfg: argparse.Namespace):
-    section_header("5. Cross-Engine Translation")
+    section_header("6. Cross-Engine Translation")
     headers = {"Authorization": f"Bearer {cfg.api_key}"}
 
     # Ollama model via OpenAI endpoint
@@ -541,11 +689,11 @@ def test_cross_engine(client: httpx.Client, cfg: argparse.Namespace):
 
 
 # ---------------------------------------------------------------------------
-# Section 6 — Error Handling
+# Section 7 — Error Handling
 # ---------------------------------------------------------------------------
 
 def test_errors(client: httpx.Client, cfg: argparse.Namespace):
-    section_header("6. Error Handling")
+    section_header("7. Error Handling")
     headers = {"Authorization": f"Bearer {cfg.api_key}"}
 
     # Missing model field
@@ -603,11 +751,11 @@ def test_errors(client: httpx.Client, cfg: argparse.Namespace):
 
 
 # ---------------------------------------------------------------------------
-# Section 7 — Admin API
+# Section 8 — Admin API
 # ---------------------------------------------------------------------------
 
 def test_admin(client: httpx.Client, cfg: argparse.Namespace):
-    section_header("7. Admin API")
+    section_header("8. Admin API")
 
     if not cfg.admin_key:
         for endpoint in ["/api/admin/backends", "/api/admin/queue",
@@ -675,6 +823,7 @@ SECTIONS = {
     "auth": test_auth,
     "openai": test_openai,
     "ollama": test_ollama,
+    "anthropic": test_anthropic,
     "cross": test_cross_engine,
     "errors": test_errors,
     "admin": test_admin,
