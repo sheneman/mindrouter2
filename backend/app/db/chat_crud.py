@@ -94,11 +94,9 @@ async def get_conversation_with_messages(
     for msg in conv.messages:
         attachments = []
         for att in msg.attachments:
-            # Determine thumbnail value: URL for filesystem, data URI for legacy base64
+            # Determine thumbnail value: URL for filesystem thumbnails
             if att.thumbnail_path:
                 thumb = f"/chat/api/attachments/{att.id}/thumbnail"
-            elif att.thumbnail_base64:
-                thumb = f"data:image/png;base64,{att.thumbnail_base64}"
             else:
                 thumb = None
             attachments.append({
@@ -232,7 +230,6 @@ async def create_attachment(
     content_type: Optional[str] = None,
     is_image: bool = False,
     storage_path: Optional[str] = None,
-    thumbnail_base64: Optional[str] = None,
     extracted_text: Optional[str] = None,
     file_size: Optional[int] = None,
 ) -> ChatAttachment:
@@ -242,7 +239,6 @@ async def create_attachment(
         content_type=content_type,
         is_image=is_image,
         storage_path=storage_path,
-        thumbnail_base64=thumbnail_base64,
         extracted_text=extracted_text,
         file_size=file_size,
     )

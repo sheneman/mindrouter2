@@ -536,7 +536,6 @@ async def chat_upload(
             filename=filename,
             content_type="image/jpeg",
             is_image=True,
-            thumbnail_base64=None,
             file_size=len(processed),
         )
 
@@ -610,7 +609,6 @@ async def chat_upload(
         filename=filename,
         content_type=content_type,
         is_image=False,
-        thumbnail_base64=None,
         extracted_text=extracted_text,
         file_size=len(file_bytes),
     )
@@ -697,17 +695,9 @@ async def serve_thumbnail(
     if not att:
         raise HTTPException(status_code=404, detail="Attachment not found")
 
-    # Prefer filesystem thumbnail_path
+    # Serve filesystem thumbnail
     if att.thumbnail_path and os.path.exists(att.thumbnail_path):
         return FileResponse(att.thumbnail_path, media_type="image/png")
-
-    # Fall back to legacy base64 data in DB
-    if att.thumbnail_base64:
-        thumb_bytes = base64.b64decode(att.thumbnail_base64)
-        return StreamingResponse(
-            io.BytesIO(thumb_bytes),
-            media_type="image/png",
-        )
 
     raise HTTPException(status_code=404, detail="Thumbnail not found")
 

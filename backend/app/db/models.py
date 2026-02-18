@@ -729,7 +729,6 @@ class ChatAttachment(Base, TimestampMixin):
     content_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     is_image: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     storage_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    thumbnail_base64: Mapped[Optional[str]] = mapped_column(MEDIUMTEXT, nullable=True)
     thumbnail_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     extracted_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     file_size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
