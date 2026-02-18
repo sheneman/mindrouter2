@@ -139,12 +139,20 @@ async def _stream_anthropic_events(
     output_tokens = 0
     content_block_index = 0
     text_block_started = False
+    finished = False
     # Track active tool blocks: tool_call_index → content_block_index
     active_tool_blocks: dict = {}
     # Accumulate tool call argument fragments per tool call index
     tool_arg_buffers: dict = {}
 
     async for chunk_bytes in openai_stream:
+        # After emitting message_stop, keep consuming the inner stream
+        # so that stream_chat_completion() can run its cleanup code
+        # (_complete_streaming_request). Without this, the inner generator
+        # is abandoned and backend capacity is never released.
+        if finished:
+            continue
+
         chunk_str = chunk_bytes.decode("utf-8") if isinstance(chunk_bytes, bytes) else chunk_bytes
 
         # Process each SSE line
@@ -269,22 +277,23 @@ async def _stream_anthropic_events(
 
                 # Emit message_stop
                 yield fmt("message_stop", {"type": "message_stop"})
-                return
+                finished = True
 
     # If stream ends without explicit finish_reason, close gracefully
-    if text_block_started:
-        yield fmt("content_block_stop", {
-            "type": "content_block_stop",
-            "index": 0,
+    if not finished:
+        if text_block_started:
+            yield fmt("content_block_stop", {
+                "type": "content_block_stop",
+                "index": 0,
+            })
+        for tc_idx in sorted(active_tool_blocks.keys()):
+            yield fmt("content_block_stop", {
+                "type": "content_block_stop",
+                "index": active_tool_blocks[tc_idx],
+            })
+        yield fmt("message_delta", {
+            "type": "message_delta",
+            "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+            "usage": {"output_tokens": output_tokens},
         })
-    for tc_idx in sorted(active_tool_blocks.keys()):
-        yield fmt("content_block_stop", {
-            "type": "content_block_stop",
-            "index": active_tool_blocks[tc_idx],
-        })
-    yield fmt("message_delta", {
-        "type": "message_delta",
-        "delta": {"stop_reason": "end_turn", "stop_sequence": None},
-        "usage": {"output_tokens": output_tokens},
-    })
-    yield fmt("message_stop", {"type": "message_stop"})
+        yield fmt("message_stop", {"type": "message_stop"})
