@@ -868,7 +868,7 @@ class BackendRegistry:
                 backend = await crud.get_backend_by_id(db, backend_id)
                 if backend:
                     # Update backend capabilities
-                    backend.supports_vision = caps.supports_vision
+                    backend.supports_multimodal = caps.supports_multimodal
                     backend.supports_embeddings = caps.supports_embeddings
                     backend.supports_structured_output = caps.supports_structured_output
                     backend.version = caps.engine_version
@@ -884,8 +884,8 @@ class BackendRegistry:
                     discovered_names = []
                     for model_info in caps.models:
                         modality = Modality.CHAT
-                        if model_info.supports_vision:
-                            modality = Modality.VISION
+                        if model_info.supports_multimodal:
+                            modality = Modality.MULTIMODAL
                         elif "embed" in model_info.name.lower():
                             modality = Modality.EMBEDDING
 
@@ -895,7 +895,7 @@ class BackendRegistry:
                             name=model_info.name,
                             modality=modality,
                             context_length=model_info.context_length,
-                            supports_vision=model_info.supports_vision,
+                            supports_multimodal=model_info.supports_multimodal,
                             supports_structured_output=model_info.supports_structured_output,
                             is_loaded=model_info.is_loaded,
                         )

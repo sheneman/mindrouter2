@@ -152,8 +152,8 @@ class CanonicalChatRequest(BaseModel):
     user_id: Optional[int] = None
     api_key_id: Optional[int] = None
 
-    def requires_vision(self) -> bool:
-        """Check if request requires vision capabilities."""
+    def requires_multimodal(self) -> bool:
+        """Check if request requires multimodal capabilities."""
         return any(msg.has_images() for msg in self.messages)
 
     def requires_structured_output(self) -> bool:

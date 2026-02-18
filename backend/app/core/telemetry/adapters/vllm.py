@@ -147,8 +147,8 @@ class VLLMAdapter:
 
             # Determine capabilities based on models
             for model in caps.models:
-                if model.supports_vision:
-                    caps.supports_vision = True
+                if model.supports_multimodal:
+                    caps.supports_multimodal = True
                 # vLLM can run embedding models
                 if "embed" in model.name.lower():
                     caps.supports_embeddings = True
@@ -242,7 +242,7 @@ class VLLMAdapter:
                     continue
 
                 # Determine capabilities from model name
-                supports_vision = any(
+                supports_multimodal = any(
                     x in model_id.lower()
                     for x in ["llava", "vision", "vl", "multimodal"]
                 )
@@ -258,7 +258,7 @@ class VLLMAdapter:
                     ModelInfo(
                         name=model_id,
                         parameter_count=param_count,
-                        supports_vision=supports_vision,
+                        supports_multimodal=supports_multimodal,
                         supports_structured_output=True,
                         is_loaded=True,  # vLLM models are always loaded
                     )

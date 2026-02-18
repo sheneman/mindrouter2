@@ -841,7 +841,7 @@ async def upsert_model(
     name: str,
     modality: Modality = Modality.CHAT,
     context_length: Optional[int] = None,
-    supports_vision: bool = False,
+    supports_multimodal: bool = False,
     supports_structured_output: bool = True,
     is_loaded: bool = False,
 ) -> Model:
@@ -853,10 +853,15 @@ async def upsert_model(
     )
     model = result.scalar_one_or_none()
 
+    # If admin has set an override, use it instead of auto-detected value
+    effective_multimodal = supports_multimodal
+
     if model:
+        if model.multimodal_override is not None:
+            effective_multimodal = model.multimodal_override
         model.modality = modality
         model.context_length = context_length
-        model.supports_vision = supports_vision
+        model.supports_multimodal = effective_multimodal
         model.supports_structured_output = supports_structured_output
         model.is_loaded = is_loaded
     else:
@@ -865,7 +870,7 @@ async def upsert_model(
             name=name,
             modality=modality,
             context_length=context_length,
-            supports_vision=supports_vision,
+            supports_multimodal=supports_multimodal,
             supports_structured_output=supports_structured_output,
             is_loaded=is_loaded,
         )
@@ -873,6 +878,38 @@ async def upsert_model(
 
     await db.flush()
     return model
+
+
+async def get_model_by_id(db: AsyncSession, model_id: int) -> Optional[Model]:
+    """Get a model by its ID."""
+    result = await db.execute(select(Model).where(Model.id == model_id))
+    return result.scalar_one_or_none()
+
+
+async def set_model_multimodal_override(
+    db: AsyncSession, model_id: int, value: Optional[bool]
+) -> Optional[Model]:
+    """Set the multimodal override for a model.
+
+    When value is True/False, admin's choice sticks regardless of auto-detect.
+    When value is None, auto-detection controls the value.
+    """
+    model = await get_model_by_id(db, model_id)
+    if not model:
+        return None
+    model.multimodal_override = value
+    if value is not None:
+        model.supports_multimodal = value
+    await db.flush()
+    return model
+
+
+async def get_all_models_with_backends(db: AsyncSession) -> list[Model]:
+    """Get all models with their backend relationship eagerly loaded."""
+    result = await db.execute(
+        select(Model).options(selectinload(Model.backend)).order_by(Model.name)
+    )
+    return list(result.scalars().all())
 
 
 async def remove_stale_models(

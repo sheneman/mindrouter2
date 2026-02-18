@@ -87,7 +87,7 @@ class BackendResponse(BaseModel):
     node_id: Optional[int]
     node_name: Optional[str]
     gpu_indices: Optional[List[int]]
-    supports_vision: bool
+    supports_multimodal: bool
     supports_embeddings: bool
     version: Optional[str]
     last_health_check: Optional[datetime]
@@ -225,7 +225,7 @@ async def register_backend(
         node_id=backend.node_id,
         node_name=node_name,
         gpu_indices=backend.gpu_indices,
-        supports_vision=backend.supports_vision,
+        supports_multimodal=backend.supports_multimodal,
         supports_embeddings=backend.supports_embeddings,
         version=backend.version,
         last_health_check=backend.last_health_check,
@@ -332,7 +332,7 @@ async def list_backends(
             node_id=b.node_id,
             node_name=b.node.name if b.node else None,
             gpu_indices=b.gpu_indices,
-            supports_vision=b.supports_vision,
+            supports_multimodal=b.supports_multimodal,
             supports_embeddings=b.supports_embeddings,
             version=b.version,
             last_health_check=b.last_health_check,
@@ -405,7 +405,7 @@ async def update_backend(
         node_id=updated.node_id,
         node_name=updated.node.name if updated.node else None,
         gpu_indices=updated.gpu_indices,
-        supports_vision=updated.supports_vision,
+        supports_multimodal=updated.supports_multimodal,
         supports_embeddings=updated.supports_embeddings,
         version=updated.version,
         last_health_check=updated.last_health_check,

@@ -92,7 +92,7 @@
                     <li><strong>Unified API Gateway</strong> &mdash; OpenAI-compatible <code>/v1/*</code> endpoints and Ollama-compatible <code>/api/*</code> endpoints, both backed by the same pool of inference servers.</li>
                     <li><strong>Cross-Engine Routing</strong> &mdash; A request arriving as OpenAI format can be served by an Ollama backend (and vice versa). The translation layer handles all protocol conversion transparently.</li>
                     <li><strong>Fair-Share Scheduling</strong> &mdash; Weighted Deficit Round Robin (WDRR) ensures equitable GPU access across users in different groups with configurable priorities.</li>
-                    <li><strong>Multi-Modal Support</strong> &mdash; Text chat, text completion, embeddings, vision-language models, and structured JSON outputs.</li>
+                    <li><strong>Multi-Modal Support</strong> &mdash; Text chat, text completion, embeddings, multimodal models, and structured JSON outputs.</li>
                     <li><strong>Per-User Quotas</strong> &mdash; Token budgets, requests-per-minute limits, and concurrent request caps, with defaults inherited from the user's group.</li>
                     <li><strong>Full Audit Logging</strong> &mdash; Every prompt, response, and token count is recorded for compliance and review.</li>
                     <li><strong>Real-Time GPU Telemetry</strong> &mdash; Per-GPU utilization, memory, temperature, and power metrics via lightweight sidecar agents.</li>
@@ -365,7 +365,7 @@ docker compose exec app python scripts/seed_dev_data.py</code></pre>
       "object": "model",
       "created": 1700000000,
       "owned_by": "mindrouter",
-      "capabilities": {"vision": false, "embeddings": false, "structured_output": true},
+      "capabilities": {"multimodal": false, "embeddings": false, "structured_output": true},
       "backends": ["ollama-gpu1", "ollama-gpu2"]
     }
   ]
@@ -598,7 +598,7 @@ docker compose exec app python scripts/seed_dev_data.py</code></pre>
                         <tr><th>Page</th><th>URL</th><th>Description</th></tr>
                     </thead>
                     <tbody>
-                        <tr><td>Chat</td><td><code>/chat</code></td><td>Full-featured chat UI with model selection, streaming, file upload, vision support</td></tr>
+                        <tr><td>Chat</td><td><code>/chat</code></td><td>Full-featured chat UI with model selection, streaming, file upload, multimodal support</td></tr>
                     </tbody>
                 </table>
                 <p>The chat interface supports:</p>
@@ -776,7 +776,7 @@ docker compose exec app python scripts/seed_dev_data.py</code></pre>
                     <li><strong>Short queue</strong> (+30 points) &mdash; prefers backends with fewer queued requests</li>
                     <li><strong>High throughput</strong> (+20 points) &mdash; based on recent tokens/second</li>
                 </ul>
-                <p>Hard constraints (vision capability, embedding support, model availability) are checked before soft scoring.</p>
+                <p>Hard constraints (multimodal capability, embedding support, model availability) are checked before soft scoring.</p>
             </section>
 
             <hr>
@@ -960,12 +960,13 @@ Ollama Request --&gt; OllamaInTranslator --&gt; CanonicalChatRequest
                 <p><strong>Storage layout:</strong></p>
                 <pre><code>/artifacts/YYYY/MM/DD/&lt;sha256_prefix&gt;/&lt;full_sha256&gt;_&lt;uuid&gt;.&lt;ext&gt;</code></pre>
 
-                <h3>Vision Model Support</h3>
+                <h3>Multimodal Model Support</h3>
                 <ul>
-                    <li>Models with vision capability are automatically detected by name patterns (e.g., <code>llava</code>, <code>-vl-</code>, <code>vision</code>)</li>
-                    <li>When images are sent to a vision model, they are included as base64-encoded content blocks</li>
-                    <li>When images are sent to a non-vision model, they are replaced with a placeholder: <code>[Image omitted -- model does not support vision: filename]</code></li>
-                    <li>A warning modal is shown in the chat UI when uploading images to a non-vision model</li>
+                    <li>Models with multimodal capability are automatically detected by name patterns (e.g., <code>llava</code>, <code>-vl-</code>, <code>vision</code>)</li>
+                    <li>When images are sent to a multimodal model, they are included as base64-encoded content blocks</li>
+                    <li>When images are sent to a non-multimodal model, they are replaced with a placeholder: <code>[Image omitted -- model does not support multimodal input: filename]</code></li>
+                    <li>A warning modal is shown in the chat UI when uploading images to a non-multimodal model</li>
+                    <li>Admins can override multimodal detection per model via the Models admin page</li>
                 </ul>
 
                 <h3>Streaming</h3>

@@ -100,7 +100,7 @@ class Modality(str, PyEnum):
     CHAT = "chat"
     COMPLETION = "completion"
     EMBEDDING = "embedding"
-    VISION = "vision"
+    MULTIMODAL = "multimodal"
 
 
 # Group Model
@@ -335,7 +335,7 @@ class Backend(Base, TimestampMixin):
     max_concurrent: Mapped[int] = mapped_column(Integer, nullable=False, default=4)
     gpu_memory_gb: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     gpu_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    supports_vision: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    supports_multimodal: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     supports_embeddings: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     supports_structured_output: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
@@ -420,8 +420,11 @@ class Model(Base, TimestampMixin):
     # Capabilities
     modality: Mapped[Modality] = mapped_column(Enum(Modality, values_callable=_enum_values), nullable=False, default=Modality.CHAT)
     context_length: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    supports_vision: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    supports_multimodal: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     supports_structured_output: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    # Admin override for multimodal (NULL = auto-detect, True/False = manual)
+    multimodal_override: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
 
     # Size and performance
     parameter_count: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # "7B", "70B"

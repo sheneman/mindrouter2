@@ -137,8 +137,8 @@ class OllamaAdapter:
 
             # Determine capabilities based on models
             for model in caps.models:
-                if model.supports_vision:
-                    caps.supports_vision = True
+                if model.supports_multimodal:
+                    caps.supports_multimodal = True
                 # Check for embedding models
                 if "embed" in model.name.lower() or "embedding" in model.name.lower():
                     caps.supports_embeddings = True
@@ -226,12 +226,12 @@ class OllamaAdapter:
                 # Parse model details
                 details = model_data.get("details", {})
 
-                # Determine if model supports vision
-                supports_vision = False
+                # Determine if model supports multimodal input
+                supports_multimodal = False
                 family = details.get("family", "").lower()
                 name_lower = name.lower()
                 if any(x in name_lower for x in ["llava", "vision", "-vl-", "-vl:"]):
-                    supports_vision = True
+                    supports_multimodal = True
 
                 # Estimate parameter count from name or details
                 param_count = details.get("parameter_size")
@@ -248,7 +248,7 @@ class OllamaAdapter:
                         family=details.get("family"),
                         parameter_count=param_count,
                         context_length=details.get("context_length"),
-                        supports_vision=supports_vision,
+                        supports_multimodal=supports_multimodal,
                         supports_structured_output=True,  # Most Ollama models do
                     )
                 )

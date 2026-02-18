@@ -511,6 +511,90 @@ async def deny_request(
     return RedirectResponse(url="/admin/requests", status_code=302)
 
 
+@dashboard_router.get("/admin/models", response_class=HTMLResponse)
+async def admin_models(
+    request: Request,
+    success: Optional[str] = None,
+    error: Optional[str] = None,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Admin model management."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or (not user.group or not user.group.is_admin):
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    models = await crud.get_all_models_with_backends(db)
+
+    return templates.TemplateResponse(
+        "admin/models.html",
+        {
+            "request": request,
+            "user": user,
+            "models": models,
+            "success": success,
+            "error": error,
+        },
+    )
+
+
+@dashboard_router.post("/admin/models/{model_id}/toggle-multimodal")
+async def toggle_model_multimodal(
+    model_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Toggle the multimodal override for a model."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or (not user.group or not user.group.is_admin):
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    model = await crud.get_model_by_id(db, model_id)
+    if not model:
+        return RedirectResponse(
+            url="/admin/models?error=Model+not+found", status_code=302
+        )
+
+    # Toggle: flip the current supports_multimodal value and set as override
+    new_value = not model.supports_multimodal
+    await crud.set_model_multimodal_override(db, model_id, new_value)
+    await db.commit()
+
+    return RedirectResponse(
+        url="/admin/models?success=updated", status_code=302
+    )
+
+
+@dashboard_router.post("/admin/models/{model_id}/reset-multimodal")
+async def reset_model_multimodal(
+    model_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Reset multimodal override to auto-detect."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or (not user.group or not user.group.is_admin):
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    await crud.set_model_multimodal_override(db, model_id, None)
+    await db.commit()
+
+    return RedirectResponse(
+        url="/admin/models?success=reset", status_code=302
+    )
+
+
 @dashboard_router.get("/admin/nodes", response_class=HTMLResponse)
 async def admin_nodes(
     request: Request,

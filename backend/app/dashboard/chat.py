@@ -211,15 +211,15 @@ def _process_image(file_bytes: bytes) -> bytes:
     return buf.getvalue()
 
 
-def _build_llm_messages(messages_with_attachments, *, model_supports_vision: bool = True):
+def _build_llm_messages(messages_with_attachments, *, model_supports_multimodal: bool = True):
     """Build OpenAI-format messages array from DB messages with attachments.
 
     Each message dict has: role, content, attachments (list of ChatAttachment ORM objects).
     For images, reads processed JPEG from filesystem and builds image_url blocks.
     For documents, includes extracted_text as context.
 
-    When *model_supports_vision* is False, image blocks are replaced with a
-    text placeholder so that non-vision models never receive image data.
+    When *model_supports_multimodal* is False, image blocks are replaced with a
+    text placeholder so that non-multimodal models never receive image data.
     """
     api_msgs = []
     for msg in messages_with_attachments:
@@ -237,10 +237,10 @@ def _build_llm_messages(messages_with_attachments, *, model_supports_vision: boo
 
             for att in attachments:
                 if att.is_image and att.storage_path:
-                    if not model_supports_vision:
+                    if not model_supports_multimodal:
                         content_blocks.append({
                             "type": "text",
-                            "text": f"[Image omitted — model does not support vision: {att.filename}]",
+                            "text": f"[Image omitted — model does not support multimodal input: {att.filename}]",
                         })
                         continue
                     # Read processed image from filesystem
@@ -325,21 +325,21 @@ async def chat_list_models(
             if model.name not in model_data:
                 model_data[model.name] = {
                     "capabilities": {
-                        "vision": False,
+                        "multimodal": False,
                         "embeddings": False,
                         "structured_output": True,
                     },
                     "created": int(model.created_at.timestamp()) if model.created_at else int(time.time()),
                 }
-            if model.supports_vision:
-                model_data[model.name]["capabilities"]["vision"] = True
+            if model.supports_multimodal:
+                model_data[model.name]["capabilities"]["multimodal"] = True
             if "embed" in model.name.lower():
                 model_data[model.name]["capabilities"]["embeddings"] = True
 
     models = []
     for name, data in sorted(model_data.items()):
         # Skip embedding-only models
-        if data["capabilities"]["embeddings"] and not data["capabilities"]["vision"]:
+        if data["capabilities"]["embeddings"] and not data["capabilities"]["multimodal"]:
             continue
         models.append({
             "id": name,
@@ -775,20 +775,20 @@ async def chat_completions(
     messages = await chat_crud.get_conversation_messages(db, conversation_id)
 
     # Look up whether the target model supports vision
-    model_supports_vision = False
+    model_supports_multimodal = False
     registry = get_registry()
     healthy_backends = await registry.get_healthy_backends()
     for b in healthy_backends:
         b_models = await registry.get_backend_models(b.id)
         for m in b_models:
-            if m.name == model and m.supports_vision:
-                model_supports_vision = True
+            if m.name == model and m.supports_multimodal:
+                model_supports_multimodal = True
                 break
-        if model_supports_vision:
+        if model_supports_multimodal:
             break
 
     # Build OpenAI messages array from DB records
-    api_messages = _build_llm_messages(messages, model_supports_vision=model_supports_vision)
+    api_messages = _build_llm_messages(messages, model_supports_multimodal=model_supports_multimodal)
 
     # Build canonical request
     try:

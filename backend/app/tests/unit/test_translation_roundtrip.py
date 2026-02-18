@@ -172,7 +172,7 @@ class TestOllamaToVLLMRoundTrip:
         }
 
         canonical = OllamaInTranslator.translate_chat_request(ollama_data)
-        assert canonical.requires_vision() is True
+        assert canonical.requires_multimodal() is True
 
         vllm_payload = VLLMOutTranslator.translate_chat_request(canonical)
         content_blocks = vllm_payload["messages"][0]["content"]
@@ -271,7 +271,7 @@ class TestVLLMToOllamaRoundTrip:
         }
 
         canonical = OpenAIInTranslator.translate_chat_request(openai_data)
-        assert canonical.requires_vision() is True
+        assert canonical.requires_multimodal() is True
 
         ollama_payload = OllamaOutTranslator.translate_chat_request(canonical)
         msg = ollama_payload["messages"][0]
@@ -416,7 +416,7 @@ class TestVisionEdgeCases:
             }],
         }
         canonical = OpenAIInTranslator.translate_chat_request(openai_data)
-        assert canonical.requires_vision() is True
+        assert canonical.requires_multimodal() is True
 
         ollama_payload = OllamaOutTranslator.translate_chat_request(canonical)
         msg = ollama_payload["messages"][0]

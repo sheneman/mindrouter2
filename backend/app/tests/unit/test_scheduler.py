@@ -452,7 +452,7 @@ class TestBackendScorer:
         backend.name = "backend-1"
         backend.status = BackendStatus.HEALTHY
         backend.engine = BackendEngine.OLLAMA
-        backend.supports_vision = True
+        backend.supports_multimodal = True
         backend.supports_embeddings = True
         backend.supports_structured_output = True
         backend.current_concurrent = 0
@@ -468,7 +468,7 @@ class TestBackendScorer:
         model = MagicMock(spec=Model)
         model.name = "llama3.2"
         model.is_loaded = True
-        model.supports_vision = True
+        model.supports_multimodal = True
         model.supports_structured_output = True
         model.vram_required_gb = 8.0
         return model
@@ -528,18 +528,18 @@ class TestBackendScorer:
         assert is_eligible is False
         assert constraints.has_capacity is False
 
-    def test_hard_constraint_vision_not_supported(self, scorer, backend, model):
-        """Test hard constraint failure: vision not supported."""
-        backend.supports_vision = False
-        model.supports_vision = False
+    def test_hard_constraint_multimodal_not_supported(self, scorer, backend, model):
+        """Test hard constraint failure: multimodal not supported."""
+        backend.supports_multimodal = False
+        model.supports_multimodal = False
 
         job = Job(
             request_id="req-1",
             user_id=1,
             api_key_id=1,
             model="llama3.2",
-            modality=JobModality.VISION,
-            requires_vision=True,
+            modality=JobModality.MULTIMODAL,
+            requires_multimodal=True,
         )
 
         is_eligible, constraints = scorer.check_hard_constraints(
@@ -657,7 +657,7 @@ class TestBackendScorer:
             backend.id = i
             backend.name = f"backend-{i}"
             backend.status = BackendStatus.HEALTHY
-            backend.supports_vision = True
+            backend.supports_multimodal = True
             backend.supports_embeddings = True
             backend.supports_structured_output = True
             backend.current_concurrent = 0
@@ -670,7 +670,7 @@ class TestBackendScorer:
             model = MagicMock(spec=Model)
             model.name = "llama3.2"
             model.is_loaded = (i == 1)  # Only backend 1 has model loaded
-            model.supports_vision = True
+            model.supports_multimodal = True
             model.supports_structured_output = True
             model.vram_required_gb = 8.0
             models_by_backend[i] = [model]

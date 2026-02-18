@@ -295,10 +295,10 @@ class TestChat:
             "chatSidebar nav missing aria-label"
         )
 
-    def test_vision_warning_modal_labeled(self):
-        modal = _find_by_attr(self.tags, "id", "visionWarningModal")
-        assert modal, "visionWarningModal not found"
-        assert modal[0]["attrs"].get("aria-labelledby") == "visionWarningLabel"
+    def test_multimodal_warning_modal_labeled(self):
+        modal = _find_by_attr(self.tags, "id", "multimodalWarningModal")
+        assert modal, "multimodalWarningModal not found"
+        assert modal[0]["attrs"].get("aria-labelledby") == "multimodalWarningLabel"
 
 
 # ── 4. Login Page Tests ──────────────────────────────────────────

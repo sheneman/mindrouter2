@@ -27,7 +27,7 @@ class ModelInfo:
     family: Optional[str] = None
     parameter_count: Optional[str] = None  # "7B", "70B", etc.
     context_length: Optional[int] = None
-    supports_vision: bool = False
+    supports_multimodal: bool = False
     supports_structured_output: bool = True
     is_loaded: bool = False
     vram_required_gb: Optional[float] = None
@@ -53,7 +53,7 @@ class BackendCapabilities:
     loaded_models: List[str] = field(default_factory=list)
     gpu_info: Optional[GPUInfo] = None
 
-    supports_vision: bool = False
+    supports_multimodal: bool = False
     supports_embeddings: bool = False
     supports_structured_output: bool = True
 

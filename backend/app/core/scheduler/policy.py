@@ -104,9 +104,9 @@ class SchedulerPolicy:
 
         # Determine modality
         modality = JobModality.CHAT
-        requires_vision = request.requires_vision()
-        if requires_vision:
-            modality = JobModality.VISION
+        requires_multimodal = request.requires_multimodal()
+        if requires_multimodal:
+            modality = JobModality.MULTIMODAL
 
         # Calculate image bytes if present
         image_bytes = 0
@@ -122,7 +122,7 @@ class SchedulerPolicy:
             model=request.model,
             modality=modality,
             is_streaming=request.stream,
-            requires_vision=requires_vision,
+            requires_multimodal=requires_multimodal,
             requires_structured_output=request.requires_structured_output(),
             estimated_prompt_tokens=estimated_prompt_tokens,
             estimated_completion_tokens=estimated_completion_tokens,
@@ -148,7 +148,7 @@ class SchedulerPolicy:
             model=request.model,
             modality=JobModality.COMPLETION,
             is_streaming=request.stream,
-            requires_vision=False,
+            requires_multimodal=False,
             requires_structured_output=False,
             estimated_prompt_tokens=estimated_prompt_tokens,
             estimated_completion_tokens=estimated_completion_tokens,
@@ -172,7 +172,7 @@ class SchedulerPolicy:
             model=request.model,
             modality=JobModality.EMBEDDING,
             is_streaming=False,
-            requires_vision=False,
+            requires_multimodal=False,
             requires_structured_output=False,
             estimated_prompt_tokens=estimated_tokens,
             estimated_completion_tokens=0,

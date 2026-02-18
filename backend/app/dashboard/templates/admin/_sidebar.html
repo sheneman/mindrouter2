@@ -12,6 +12,11 @@
             </a>
         </li>
         <li class="nav-item">
+            <a class="nav-link {% if active == 'models' %}active{% endif %}" href="/admin/models" {% if active == 'models' %}aria-current="page"{% endif %}>
+                <i class="bi bi-boxes"></i> Models
+            </a>
+        </li>
+        <li class="nav-item">
             <a class="nav-link {% if active == 'nodes' %}active{% endif %}" href="/admin/nodes" {% if active == 'nodes' %}aria-current="page"{% endif %}>
                 <i class="bi bi-hdd-rack"></i> Nodes
             </a>

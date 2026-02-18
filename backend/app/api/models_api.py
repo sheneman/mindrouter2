@@ -56,7 +56,7 @@ async def list_models(
                 model_data[model.name] = {
                     "backends": [],
                     "capabilities": {
-                        "vision": False,
+                        "multimodal": False,
                         "embeddings": False,
                         "structured_output": True,
                     },
@@ -66,8 +66,8 @@ async def list_models(
             model_data[model.name]["backends"].append(backend.name)
 
             # Update capabilities
-            if model.supports_vision:
-                model_data[model.name]["capabilities"]["vision"] = True
+            if model.supports_multimodal:
+                model_data[model.name]["capabilities"]["multimodal"] = True
             if "embed" in model.name.lower():
                 model_data[model.name]["capabilities"]["embeddings"] = True
 

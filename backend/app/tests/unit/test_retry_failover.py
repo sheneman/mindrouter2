@@ -35,7 +35,7 @@ _HEALTHY_SENTINEL = object()
 # Build a mock db.models module with the real enum-like values the scorer uses
 _mock_db_models = MagicMock()
 _mock_db_models.BackendStatus.HEALTHY = _HEALTHY_SENTINEL
-_mock_db_models.Modality.VISION = "VISION"
+_mock_db_models.Modality.MULTIMODAL = "MULTIMODAL"
 _mock_db_models.Modality.EMBEDDING = "EMBEDDING"
 
 _MOCKED_MODULES = [
@@ -96,7 +96,7 @@ def _make_backend(bid, name="test", throughput_score=1.0):
     b.id = bid
     b.name = name
     b.status = _HEALTHY_SENTINEL
-    b.supports_vision = False
+    b.supports_multimodal = False
     b.supports_embeddings = False
     b.supports_structured_output = True
     b.current_concurrent = 0
@@ -112,7 +112,7 @@ def _make_model(name, is_loaded=True):
     m = MagicMock()
     m.name = name
     m.is_loaded = is_loaded
-    m.supports_vision = False
+    m.supports_multimodal = False
     m.supports_structured_output = True
     m.modality = None
     m.vram_required_gb = None
@@ -124,7 +124,7 @@ def _make_job(model="llama3"):
     j = MagicMock()
     j.model = model
     j.modality = None
-    j.requires_vision = False
+    j.requires_multimodal = False
     j.requires_structured_output = False
     j.estimated_prompt_tokens = 100
     j.estimated_completion_tokens = 50

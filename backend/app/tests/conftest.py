@@ -163,7 +163,7 @@ def mock_backend():
     backend.url = "http://localhost:11434"
     backend.engine = BackendEngine.OLLAMA
     backend.status = BackendStatus.HEALTHY
-    backend.supports_vision = True
+    backend.supports_multimodal = True
     backend.supports_embeddings = True
     backend.supports_structured_output = True
     backend.current_concurrent = 0
@@ -188,7 +188,7 @@ def mock_model():
     model.name = "llama3.2"
     model.modality = Modality.CHAT
     model.context_length = 4096
-    model.supports_vision = True
+    model.supports_multimodal = True
     model.supports_structured_output = True
     model.is_loaded = True
     model.vram_required_gb = 8.0
@@ -495,7 +495,7 @@ def mock_ollama_backend():
     status = MagicMock()
     status.value = "healthy"
     backend.status = status
-    backend.supports_vision = True
+    backend.supports_multimodal = True
     backend.supports_embeddings = True
     backend.supports_structured_output = True
     backend.current_concurrent = 0
@@ -521,7 +521,7 @@ def mock_vllm_backend():
     status = MagicMock()
     status.value = "healthy"
     backend.status = status
-    backend.supports_vision = True
+    backend.supports_multimodal = True
     backend.supports_embeddings = True
     backend.supports_structured_output = True
     backend.current_concurrent = 0

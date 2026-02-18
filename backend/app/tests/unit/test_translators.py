@@ -134,7 +134,7 @@ class TestOpenAIInTranslator:
 
         assert len(result.messages) == 1
         assert result.messages[0].has_images() is True
-        assert result.requires_vision() is True
+        assert result.requires_multimodal() is True
 
     def test_embedding_request(self):
         """Test embedding request translation."""

@@ -569,7 +569,7 @@
                 <div class="welcome-content">
                     <div><i class="bi bi-chat-dots" aria-hidden="true" style="font-size:2rem;"></i></div>
                     <h2>MindRouter Chat</h2>
-                    <p>Select a model and start chatting. You can attach files for context or images for vision models.</p>
+                    <p>Select a model and start chatting. You can attach files for context or images for multimodal models.</p>
                 </div>
             </div>
         </div>
@@ -605,25 +605,25 @@
     </div>
 </div>
 
-<!-- Vision warning modal -->
-<div class="modal fade" id="visionWarningModal" tabindex="-1" aria-labelledby="visionWarningLabel" aria-hidden="true">
+<!-- Multimodal warning modal -->
+<div class="modal fade" id="multimodalWarningModal" tabindex="-1" aria-labelledby="multimodalWarningLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header bg-warning-subtle">
-                <h5 class="modal-title" id="visionWarningLabel">
-                    <i class="bi bi-exclamation-triangle"></i> Non-Vision Model Selected
+                <h5 class="modal-title" id="multimodalWarningLabel">
+                    <i class="bi bi-exclamation-triangle"></i> Non-Multimodal Model Selected
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <p>You are uploading an image, but the currently selected model
-                (<strong id="visionWarningModelName"></strong>) does not support vision.</p>
+                (<strong id="multimodalWarningModelName"></strong>) does not support multimodal input.</p>
                 <p>Image content will not be visible to this model. Please select a
-                vision-capable model (marked with <em>"(vision)"</em>) to use images.</p>
+                multimodal-capable model (marked with <em>"(multimodal)"</em>) to use images.</p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-warning" id="visionWarningContinueBtn">Upload Anyway</button>
+                <button type="button" class="btn btn-warning" id="multimodalWarningContinueBtn">Upload Anyway</button>
             </div>
         </div>
     </div>
@@ -662,7 +662,7 @@
     let pendingFiles = [];   // [{attachment_id, filename, is_image, thumbnail, content_type}]
     let abortController = null;
     let isStreaming = false;
-    let modelCapabilities = {};  // { modelId: { vision: bool, ... } }
+    let modelCapabilities = {};  // { modelId: { multimodal: bool, ... } }
 
     // ---------------------------------------------------------------
     // DOM refs
@@ -1168,8 +1168,8 @@
                     if (m.capabilities) {
                         modelCapabilities[m.id] = m.capabilities;
                     }
-                    if (m.capabilities && m.capabilities.vision) {
-                        opt.textContent += ' (vision)';
+                    if (m.capabilities && m.capabilities.multimodal) {
+                        opt.textContent += ' (multimodal)';
                     }
                     modelSelect.appendChild(opt);
                 });
@@ -1193,9 +1193,9 @@
     // Refresh model list every 30 seconds to pick up backend changes
     setInterval(loadModels, 30000);
 
-    function currentModelSupportsVision() {
+    function currentModelSupportsMultimodal() {
         const caps = modelCapabilities[modelSelect.value];
-        return caps && caps.vision;
+        return caps && caps.multimodal;
     }
 
     modelSelect.addEventListener('change', () => {
@@ -1226,20 +1226,20 @@
             return imageExts.includes(ext);
         });
 
-        if (hasImages && !currentModelSupportsVision()) {
+        if (hasImages && !currentModelSupportsMultimodal()) {
             // Show warning modal and wait for user decision
-            const proceed = await showVisionWarning();
+            const proceed = await showMultimodalWarning();
             if (!proceed) return;
         }
 
         await uploadFiles(fileList);
     }
 
-    function showVisionWarning() {
+    function showMultimodalWarning() {
         return new Promise((resolve) => {
-            const modalEl = document.getElementById('visionWarningModal');
-            const modelNameEl = document.getElementById('visionWarningModelName');
-            const continueBtn = document.getElementById('visionWarningContinueBtn');
+            const modalEl = document.getElementById('multimodalWarningModal');
+            const modelNameEl = document.getElementById('multimodalWarningModelName');
+            const continueBtn = document.getElementById('multimodalWarningContinueBtn');
             modelNameEl.textContent = modelSelect.value || 'unknown';
 
             const modal = new bootstrap.Modal(modalEl);

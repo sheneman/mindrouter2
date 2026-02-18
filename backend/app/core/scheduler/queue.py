@@ -28,7 +28,7 @@ class JobModality(str, Enum):
     CHAT = "chat"
     COMPLETION = "completion"
     EMBEDDING = "embedding"
-    VISION = "vision"
+    MULTIMODAL = "multimodal"
 
 
 @dataclass
@@ -44,7 +44,7 @@ class Job:
     model: str
     modality: JobModality
     is_streaming: bool = False
-    requires_vision: bool = False
+    requires_multimodal: bool = False
     requires_structured_output: bool = False
 
     # Size estimates
