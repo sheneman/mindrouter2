@@ -1444,7 +1444,9 @@
 
             if (!res.ok) {
                 const errData = await res.json().catch(() => ({}));
-                throw new Error(errData.error || `HTTP ${res.status}`);
+                const errMsg = typeof errData.error === 'string' ? errData.error
+                    : (errData.error ? JSON.stringify(errData.error) : `HTTP ${res.status}`);
+                throw new Error(errMsg);
             }
 
             const reader = res.body.getReader();
@@ -1468,7 +1470,8 @@
                     try {
                         const chunk = JSON.parse(payload);
                         if (chunk.error) {
-                            appendStreamDelta(`\n\n**Error:** ${chunk.error}`);
+                            const msg = typeof chunk.error === 'string' ? chunk.error : JSON.stringify(chunk.error);
+                            appendStreamDelta(`\n\n**Error:** ${msg}`);
                             break;
                         }
                         const delta = chunk.choices?.[0]?.delta?.content;

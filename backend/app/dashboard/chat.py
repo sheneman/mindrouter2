@@ -17,6 +17,7 @@
 import asyncio
 import base64
 import io
+import json
 import os
 import time
 from typing import List, Optional, Tuple
@@ -840,12 +841,13 @@ async def chat_completions(
 
                     yield chunk
             except HTTPException as e:
-                error_data = f'data: {{"error": "{e.detail}"}}\n\n'
+                detail = e.detail if isinstance(e.detail, str) else json.dumps(e.detail)
+                error_data = "data: " + json.dumps({"error": detail}) + "\n\n"
                 yield error_data.encode()
                 yield b"data: [DONE]\n\n"
             except Exception as e:
                 logger.exception("chat_stream_error", error=str(e))
-                error_data = f'data: {{"error": "Internal server error"}}\n\n'
+                error_data = "data: " + json.dumps({"error": "Internal server error"}) + "\n\n"
                 yield error_data.encode()
                 yield b"data: [DONE]\n\n"
             finally:
@@ -892,7 +894,8 @@ async def chat_completions(
 
             return JSONResponse(result)
         except HTTPException as e:
-            return JSONResponse({"error": e.detail}, status_code=e.status_code)
+            detail = e.detail if isinstance(e.detail, str) else json.dumps(e.detail)
+            return JSONResponse({"error": detail}, status_code=e.status_code)
         except Exception as e:
             logger.exception("chat_completion_error", error=str(e))
             return JSONResponse({"error": "Internal server error"}, status_code=500)
