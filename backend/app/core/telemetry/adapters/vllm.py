@@ -254,10 +254,14 @@ class VLLMAdapter:
                         param_count = size.upper()
                         break
 
+                # max_model_len is a vLLM extension to the OpenAI /v1/models response
+                context_length = model_data.get("max_model_len")
+
                 models.append(
                     ModelInfo(
                         name=model_id,
                         parameter_count=param_count,
+                        context_length=context_length,
                         supports_multimodal=supports_multimodal,
                         supports_structured_output=True,
                         is_loaded=True,  # vLLM models are always loaded

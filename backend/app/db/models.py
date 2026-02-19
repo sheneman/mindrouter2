@@ -421,6 +421,7 @@ class Model(Base, TimestampMixin):
     # Capabilities
     modality: Mapped[Modality] = mapped_column(Enum(Modality, values_callable=_enum_values), nullable=False, default=Modality.CHAT)
     context_length: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    model_max_context: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     supports_multimodal: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     supports_structured_output: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 

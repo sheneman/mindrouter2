@@ -917,6 +917,7 @@ class BackendRegistry:
                             layer_count=model_info.layer_count,
                             feed_forward_length=model_info.feed_forward_length,
                             parent_model=model_info.parent_model,
+                            model_max_context=model_info.model_max_context,
                         )
                         discovered_names.append(model_info.name)
 

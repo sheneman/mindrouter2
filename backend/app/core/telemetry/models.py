@@ -28,6 +28,7 @@ class ModelInfo:
     parameter_count: Optional[str] = None  # "7B", "70B", etc.
     quantization: Optional[str] = None  # "Q4_K_M", "FP16", etc.
     context_length: Optional[int] = None
+    model_max_context: Optional[int] = None
     supports_multimodal: bool = False
     supports_structured_output: bool = True
     is_loaded: bool = False

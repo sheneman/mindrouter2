@@ -280,11 +280,19 @@ class OllamaAdapter:
                             model.family = families[0]
 
                     # Architecture fields from model_info
+                    # Parse num_ctx from Modelfile parameters
+                    num_ctx = self._parse_num_ctx(show_data.get("parameters", ""))
+
                     model_info = show_data.get("model_info", {})
                     if model_info:
                         arch_fields = self._extract_arch_fields(model_info)
-                        # Override context_length if available (more authoritative)
+                        # Set model_max_context to the architectural maximum
                         if arch_fields.get("context_length") is not None:
+                            model.model_max_context = arch_fields["context_length"]
+                        # Effective context_length: use num_ctx if configured, else arch max
+                        if num_ctx is not None:
+                            model.context_length = num_ctx
+                        elif arch_fields.get("context_length") is not None:
                             model.context_length = arch_fields["context_length"]
                         model.embedding_length = arch_fields.get("embedding_length")
                         model.head_count = arch_fields.get("head_count")
@@ -317,6 +325,26 @@ class OllamaAdapter:
         except Exception as e:
             logger.debug("ollama_show_failed", model=model_name, error=str(e))
         return {}
+
+    @staticmethod
+    def _parse_num_ctx(parameters: str) -> Optional[int]:
+        """Parse num_ctx from Ollama Modelfile parameters string.
+
+        The parameters string is newline-delimited key-value pairs, e.g.:
+            stop           "<|eot_id|>"
+            num_ctx        8192
+            temperature    0.7
+        """
+        if not parameters:
+            return None
+        for line in parameters.splitlines():
+            parts = line.split()
+            if len(parts) >= 2 and parts[0] == "num_ctx":
+                try:
+                    return int(parts[1])
+                except (ValueError, IndexError):
+                    pass
+        return None
 
     @staticmethod
     def _extract_arch_fields(model_info: dict) -> dict:

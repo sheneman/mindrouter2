@@ -90,6 +90,10 @@
                                         <dd class="col-7">{{ first.family or 'Unknown' }}{% if first.family_override is not none %} <span class="badge bg-info" style="font-size:0.6rem">override</span>{% endif %}</dd>
                                         <dt class="col-5">Context Length:</dt>
                                         <dd class="col-7">{{ '{:,}'.format(first.context_length) if first.context_length else 'Unknown' }}{% if first.context_length_override is not none %} <span class="badge bg-info" style="font-size:0.6rem">override</span>{% endif %}</dd>
+                                        {% if first.model_max_context and first.model_max_context != first.context_length %}
+                                        <dt class="col-5">Model Max:</dt>
+                                        <dd class="col-7">{{ '{:,}'.format(first.model_max_context) }}</dd>
+                                        {% endif %}
                                         <dt class="col-5">Parameters:</dt>
                                         <dd class="col-7">{{ first.parameter_count or 'Unknown' }}{% if first.parameter_count_override is not none %} <span class="badge bg-info" style="font-size:0.6rem">override</span>{% endif %}</dd>
                                         <dt class="col-5">Quantization:</dt>

@@ -855,6 +855,7 @@ async def upsert_model(
     layer_count: Optional[int] = None,
     feed_forward_length: Optional[int] = None,
     parent_model: Optional[str] = None,
+    model_max_context: Optional[int] = None,
 ) -> Model:
     """Create or update a model record."""
     result = await db.execute(
@@ -872,6 +873,7 @@ async def upsert_model(
             effective_multimodal = model.multimodal_override
         model.modality = modality
         model.context_length = model.context_length_override if model.context_length_override is not None else context_length
+        model.model_max_context = model_max_context
         model.supports_multimodal = effective_multimodal
         model.supports_structured_output = supports_structured_output
         model.is_loaded = is_loaded
@@ -891,6 +893,7 @@ async def upsert_model(
             name=name,
             modality=modality,
             context_length=context_length,
+            model_max_context=model_max_context,
             supports_multimodal=supports_multimodal,
             supports_structured_output=supports_structured_output,
             is_loaded=is_loaded,
