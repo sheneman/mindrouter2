@@ -103,3 +103,9 @@ service-account.json
 # Build outputs
 *.tar.gz
 *.zip
+
+# Stray pip install artifacts (pip install =x.y.z)
+=*
+
+# Test artifacts
+test.pdf

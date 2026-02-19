@@ -642,8 +642,21 @@ class InferenceService:
                     await self._registry.report_live_failure(backend.id)
                     last_error = e
                 else:
-                    # 4xx = client error — don't retry
-                    raise
+                    # 4xx = client error — don't retry, but convert to HTTPException
+                    try:
+                        detail = e.response.json()
+                    except Exception:
+                        detail = e.response.text or str(e)
+                    logger.warning(
+                        "backend_4xx",
+                        backend_id=backend.id,
+                        status=e.response.status_code,
+                        detail=detail,
+                    )
+                    raise HTTPException(
+                        status_code=e.response.status_code,
+                        detail=detail,
+                    )
 
             except (httpx.ConnectError, httpx.RemoteProtocolError, ConnectionError) as e:
                 logger.warning(
@@ -744,7 +757,23 @@ class InferenceService:
                 last_error = e
 
             except httpx.HTTPStatusError as e:
-                if first_chunk_received or e.response.status_code < 500:
+                if e.response.status_code < 500:
+                    # 4xx = client error — convert to HTTPException
+                    try:
+                        detail = e.response.json()
+                    except Exception:
+                        detail = e.response.text or str(e)
+                    logger.warning(
+                        "stream_backend_4xx",
+                        backend_id=backend.id,
+                        status=e.response.status_code,
+                        detail=detail,
+                    )
+                    raise HTTPException(
+                        status_code=e.response.status_code,
+                        detail=detail,
+                    )
+                if first_chunk_received:
                     raise
                 logger.warning(
                     "stream_backend_5xx",

@@ -10,7 +10,7 @@ Interactive API docs are also available at `/docs` (Swagger UI) and `/redoc` (Re
 
 ## Features
 
-- **Unified API Gateway**: OpenAI-compatible `/v1/*` endpoints + Ollama `/api/*` passthrough
+- **Unified API Gateway**: OpenAI-compatible `/v1/*`, Ollama `/api/*`, and Anthropic `/anthropic/v1/*` endpoints
 - **API Dialect Translation**: Automatic translation between Ollama and vLLM formats
 - **Fair-Share Scheduling**: Weighted Deficit Round Robin with burst credits
 - **Multi-Modal Support**: Text, embeddings, and vision-language models
@@ -79,6 +79,35 @@ curl http://localhost:8000/v1/models \
   -H "Authorization: Bearer your-api-key"
 ```
 
+#### Anthropic-Compatible Endpoint
+
+```bash
+# Chat via Anthropic Messages API
+curl -X POST http://localhost:8000/anthropic/v1/messages \
+  -H "Authorization: Bearer your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "llama3.2",
+    "max_tokens": 500,
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
+
+Anthropic SDK clients (Python, TypeScript) can point directly at MindRouter2:
+
+```python
+import anthropic
+client = anthropic.Anthropic(
+    base_url="http://localhost:8000/anthropic",
+    api_key="your-api-key",
+)
+message = client.messages.create(
+    model="llama3.2",
+    max_tokens=500,
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+```
+
 #### Ollama-Compatible Endpoints
 
 ```bash
@@ -125,16 +154,16 @@ After running the seed script:
 ┌─────────────────────────────────────────────────────────────────┐
 │                        MindRouter2 Gateway                      │
 ├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐ │
-│  │ OpenAI   │  │ Ollama   │  │ Admin    │  │ Dashboard        │ │
-│  │ /v1/*    │  │ /api/*   │  │ API      │  │ (Bootstrap)      │ │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────────┬─────────┘ │
-│       │             │             │                 │           │
-│       └─────────────┴─────────────┴─────────────────┘           │
+│  ┌────────┐ ┌────────┐ ┌───────────┐ ┌───────┐ ┌──────────────┐ │
+│  │ OpenAI │ │ Ollama │ │ Anthropic │ │ Admin │ │  Dashboard   │ │
+│  │ /v1/*  │ │ /api/* │ │/anthropic/│ │  API  │ │ (Bootstrap)  │ │
+│  └───┬────┘ └───┬────┘ └─────┬─────┘ └───┬───┘ └──────┬───────┘ │
+│      │          │            │            │            │         │
+│      └──────────┴────────────┴────────────┴────────────┘         │
 │                              │                                  │
 │  ┌───────────────────────────┴───────────────────────────────┐  │
 │  │                    Translation Layer                      │  │
-│  │  OpenAI ←→ Canonical ←→ Ollama/vLLM                       │  │
+│  │  OpenAI/Ollama/Anthropic ←→ Canonical ←→ Ollama/vLLM       │  │
 │  └───────────────────────────┬───────────────────────────────┘  │
 │                              │                                  │
 │  ┌───────────────────────────┴───────────────────────────────┐  │
@@ -302,6 +331,7 @@ make docker-down  # Stop docker compose stack
 | POST | `/api/chat` | Ollama-compatible chat |
 | POST | `/api/generate` | Ollama-compatible generate |
 | GET | `/api/tags` | Ollama-compatible model list |
+| POST | `/anthropic/v1/messages` | Anthropic Messages API compatible |
 
 #### Health & Metrics
 
@@ -357,6 +387,30 @@ Each GPU node runs a lightweight **sidecar agent** (`sidecar/gpu_agent.py`) that
 
 The sidecar must run on each physical GPU server. It requires NVIDIA drivers and the NVIDIA Container Toolkit. A `SIDECAR_SECRET_KEY` environment variable is **required** — the sidecar will refuse to start without it. Generate one with: `python -c "import secrets; print(secrets.token_hex(32))"`
 
+#### Docker network prerequisites
+
+Docker's default bridge network uses `172.17.0.0/16`, which can collide with campus or institutional routing. Configure each GPU node's Docker daemon to use `10.x.x.x` address space before deploying the sidecar:
+
+```bash
+# /etc/docker/daemon.json — create or merge on each GPU node
+{
+    "runtimes": {
+        "nvidia": {
+            "args": [],
+            "path": "nvidia-container-runtime"
+        }
+    },
+    "bip": "10.77.0.1/16",
+    "default-address-pools": [
+        { "base": "10.78.0.0/16", "size": 24 }
+    ]
+}
+```
+
+After creating or updating `daemon.json`, restart Docker: `sudo systemctl restart docker`
+
+#### Deployment options
+
 **Option A: Docker Compose (development)**
 
 ```bash
@@ -366,17 +420,45 @@ export SIDECAR_SECRET_KEY=your-generated-key
 docker compose --profile gpu up gpu-sidecar
 ```
 
-**Option B: Standalone Docker (production — run on each GPU node)**
+**Option B: Standalone Docker + nginx reverse proxy (production — run on each GPU node)**
+
+In production, bind the sidecar container to localhost only and front it with an nginx reverse proxy. This prevents direct external access to the Docker-mapped port.
 
 ```bash
 # On each GPU server:
 docker build -t mindrouter-sidecar -f sidecar/Dockerfile.sidecar sidecar/
 docker run -d --name gpu-sidecar \
   --gpus all \
-  -p 8007:8007 \
+  -p 127.0.0.1:18007:8007 \
   -e SIDECAR_SECRET_KEY=your-generated-key \
   --restart unless-stopped \
   mindrouter-sidecar
+```
+
+Then configure nginx to proxy external port 8007 to the container:
+
+```nginx
+# /etc/nginx/conf.d/sidecar-proxy.conf
+server {
+    listen 8007;
+    listen [::]:8007;
+    server_name _;
+
+    location / {
+        proxy_pass http://127.0.0.1:18007;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Sidecar-Key $http_x_sidecar_key;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 10s;
+    }
+}
+```
+
+```bash
+sudo systemctl enable --now nginx
 ```
 
 **Option C: Direct Python (no Docker)**
@@ -427,6 +509,8 @@ Each backend's telemetry (utilization, memory) is aggregated only from its assig
 - All admin actions are audited
 - Request/response content logged for compliance review
 - GPU sidecar endpoints are authenticated via shared secret key (`X-Sidecar-Key` header, constant-time comparison)
+- Sidecar containers bind to localhost only; nginx reverse proxy handles external access on port 8007
+- Docker daemon on GPU nodes uses 10.x.x.x address space to avoid routing collisions with campus/institutional networks
 
 ## License
 

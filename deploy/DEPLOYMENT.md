@@ -141,44 +141,113 @@ docker compose -f docker-compose.prod.yml exec app python scripts/seed_dev_data.
 
 Each GPU inference node needs a sidecar agent running to report GPU metrics back to MindRouter2.
 
-### On each GPU server:
+### 10a. Configure Docker daemon on each GPU node
+
+Docker's default bridge network (`172.17.0.0/16`) can collide with campus or institutional routing. Configure each GPU node to use `10.x.x.x` address space:
 
 ```bash
-# Option A: Run via Docker (recommended)
-# Copy the sidecar directory to the GPU server, or pull the repo
-scp -r sidecar/ user@gpu-server:/opt/mindrouter-sidecar/
+# Create /etc/docker/daemon.json on each GPU node
+sudo tee /etc/docker/daemon.json <<'EOF'
+{
+    "runtimes": {
+        "nvidia": {
+            "args": [],
+            "path": "nvidia-container-runtime"
+        }
+    },
+    "bip": "10.77.0.1/16",
+    "default-address-pools": [
+        { "base": "10.78.0.0/16", "size": 24 }
+    ]
+}
+EOF
 
+sudo systemctl restart docker
+```
+
+### 10b. Deploy the sidecar container
+
+The sidecar requires a `SIDECAR_SECRET_KEY` for authentication. Generate one per node:
+
+```bash
+python3 -c "import secrets; print(secrets.token_hex(32))"
+```
+
+Clone the repo (or copy the sidecar directory) to the GPU server, then build and run. In production, bind the container to localhost only and use nginx as a reverse proxy:
+
+```bash
 ssh user@gpu-server
-cd /opt/mindrouter-sidecar
+cd /scratch  # or /opt
+git clone https://github.com/sheneman/mindrouter2.git
+cd mindrouter2/sidecar
+
+# Build the sidecar image
 docker build -t mindrouter-sidecar -f Dockerfile.sidecar .
+
+# Run bound to localhost only (nginx will proxy external traffic)
 docker run -d --name gpu-sidecar \
   --gpus all \
-  -p 8007:8007 \
+  -p 127.0.0.1:18007:8007 \
+  -e SIDECAR_SECRET_KEY=your-generated-key \
   --restart unless-stopped \
   mindrouter-sidecar
-
-# Verify it's working
-curl http://localhost:8007/health
-curl http://localhost:8007/gpu-info
 ```
 
+### 10c. Configure nginx reverse proxy
+
+Install nginx and create a proxy config so MindRouter2 can reach the sidecar on port 8007:
+
 ```bash
-# Option B: Run directly (no Docker)
-pip install fastapi uvicorn nvidia-ml-py
-GPU_AGENT_PORT=8007 python gpu_agent.py
+# Install nginx (Rocky Linux / RHEL)
+sudo dnf install -y nginx
+sudo systemctl enable --now nginx
+
+# Create sidecar proxy config
+sudo tee /etc/nginx/conf.d/sidecar-proxy.conf <<'EOF'
+server {
+    listen 8007;
+    listen [::]:8007;
+    server_name _;
+
+    location / {
+        proxy_pass http://127.0.0.1:18007;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Sidecar-Key $http_x_sidecar_key;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 10s;
+    }
+}
+EOF
+
+sudo systemctl reload nginx
 ```
 
-### Register the node in MindRouter2:
+Verify the sidecar is reachable:
 
 ```bash
-# Via API
+# Locally
+curl -H "X-Sidecar-Key: your-generated-key" http://localhost:8007/health
+
+# From MindRouter2 server
+curl -H "X-Sidecar-Key: your-generated-key" http://gpu-server.example.com:8007/health
+```
+
+### 10d. Register the node in MindRouter2
+
+Include the same key that was set as `SIDECAR_SECRET_KEY` on the sidecar:
+
+```bash
 curl -X POST https://mindrouter.example.com/api/admin/nodes/register \
   -H "Authorization: Bearer admin-api-key" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "gpu-server-1",
     "hostname": "gpu1.example.com",
-    "sidecar_url": "http://gpu1.example.com:8007"
+    "sidecar_url": "http://gpu1.example.com:8007",
+    "sidecar_key": "your-generated-key"
   }'
 ```
 
@@ -226,6 +295,18 @@ curl -k https://mindrouter.example.com/healthz
 
 # Check all services are healthy
 docker compose -f docker-compose.prod.yml ps
+
+# Test OpenAI-compatible endpoint
+curl -X POST https://mindrouter.example.com/v1/chat/completions \
+  -H "Authorization: Bearer your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "llama3.2", "max_tokens": 16, "messages": [{"role": "user", "content": "Say ok."}]}'
+
+# Test Anthropic-compatible endpoint
+curl -X POST https://mindrouter.example.com/anthropic/v1/messages \
+  -H "Authorization: Bearer your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "llama3.2", "max_tokens": 16, "messages": [{"role": "user", "content": "Say ok."}]}'
 
 # Verify sidecar connectivity (from MindRouter2 server)
 curl http://gpu1.example.com:8007/health
@@ -323,5 +404,7 @@ docker compose -f docker-compose.prod.yml exec app \
 - [ ] Redis not exposed externally
 - [ ] CORS_ORIGINS set to actual domain
 - [ ] Disabled DEBUG mode
-- [ ] GPU sidecar ports (8007) not exposed to public internet
-- [ ] Sidecar agents running on all GPU nodes
+- [ ] GPU sidecar containers bound to localhost only (127.0.0.1:18007)
+- [ ] Nginx reverse proxy configured on each GPU node (port 8007 → 127.0.0.1:18007)
+- [ ] Sidecar agents running on all GPU nodes with unique `SIDECAR_SECRET_KEY`
+- [ ] Docker daemon configured with 10.x.x.x address space on all GPU nodes
