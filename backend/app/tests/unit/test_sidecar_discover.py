@@ -199,6 +199,78 @@ class TestProbeEndpoint:
         assert result is None
 
 
+class TestProcessNameFallback:
+    """Tests for process-name-based discovery fallback."""
+
+    def test_finds_ollama_by_cmdline(self):
+        """Should discover an Ollama process by scanning /proc cmdline."""
+        # Simulate /proc layout: PID 5000 is ollama serve, listening on port 11434
+        def mock_listdir(path):
+            if path == "/proc":
+                return ["1", "5000", "self", "net"]
+            if path == "/proc/5000/fd":
+                return ["3"]
+            raise OSError("no such dir")
+
+        def mock_readlink(path):
+            if path == "/proc/5000/fd/3":
+                return "socket:[99999]"
+            raise OSError("no link")
+
+        # /proc/net/tcp: port 11434 = 0x2CAA, state 0A = LISTEN, inode 99999
+        tcp_content = (
+            "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n"
+            "   0: 00000000:2CAA 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 99999 1\n"
+        )
+
+        # /proc/5000/cmdline: "ollama\x00serve\x00"
+        cmdline_bytes = b"ollama\x00serve\x00"
+        # /proc/5000/stat: PID=5000, comm=(ollama), state=S, PPID=1
+        stat_content = "5000 (ollama) S 1 5000 5000 0 -1 4194304"
+
+        real_open = open
+
+        def mock_open_fn(path, *args, **kwargs):
+            if path == "/proc/net/tcp":
+                return mock_open(read_data=tcp_content)()
+            if path == "/proc/net/tcp6":
+                raise FileNotFoundError
+            if path == "/proc/5000/cmdline":
+                import io
+                return io.BytesIO(cmdline_bytes)
+            if path == "/proc/5000/stat":
+                return mock_open(read_data=stat_content)()
+            if str(path).endswith("/stat"):
+                raise OSError("no such file")
+            raise FileNotFoundError
+
+        mock_pynvml = MagicMock()
+        mock_pynvml.nvmlDeviceGetHandleByIndex.return_value = MagicMock()
+        mock_pynvml.nvmlDeviceGetComputeRunningProcesses.return_value = []
+
+        with patch("builtins.open", side_effect=mock_open_fn):
+            with patch("os.listdir", side_effect=mock_listdir):
+                with patch("os.readlink", side_effect=mock_readlink):
+                    with patch.dict(sys.modules, {"pynvml": mock_pynvml}):
+                        # No GPU processes — NVML returns nothing
+                        orig_initialized = _gpu_agent._initialized
+                        orig_count = _gpu_agent._device_count
+                        _gpu_agent._initialized = True
+                        _gpu_agent._device_count = 0
+                        try:
+                            pid_to_gpus = _gpu_agent._get_pid_to_gpus()
+                            pid_to_ports = _gpu_agent._get_listening_ports()
+                        finally:
+                            _gpu_agent._initialized = orig_initialized
+                            _gpu_agent._device_count = orig_count
+
+        # pid_to_gpus should be empty (no GPUs)
+        assert pid_to_gpus == {}
+        # pid_to_ports should have PID 5000 → [11434]
+        assert 5000 in pid_to_ports
+        assert 11434 in pid_to_ports[5000]
+
+
 class TestSidecarVersion:
     """Tests for sidecar version reading."""
 

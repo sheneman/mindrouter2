@@ -467,6 +467,36 @@ async def discover_endpoints(_: None = Depends(verify_sidecar_key)):
                         "gpu_indices": sorted(set(gpu_indices)),
                     }
 
+    # Fallback: scan /proc for processes whose command line matches known
+    # inference engines (ollama, vllm).  This catches idle servers that have
+    # no model loaded in VRAM and therefore no NVML GPU process.
+    _ENGINE_PATTERNS = ["ollama", "vllm"]
+    try:
+        for entry in os.listdir("/proc"):
+            if not entry.isdigit():
+                continue
+            pid = int(entry)
+            try:
+                with open(f"/proc/{pid}/cmdline", "rb") as f:
+                    cmdline = f.read().decode("utf-8", errors="replace").replace("\x00", " ").lower()
+            except (OSError, PermissionError):
+                continue
+            if not any(pat in cmdline for pat in _ENGINE_PATTERNS):
+                continue
+            # This PID looks like an inference engine — check if it listens on any port
+            if pid not in pid_to_ports:
+                continue
+            for port in pid_to_ports[pid]:
+                if port in candidates:
+                    continue  # already found via GPU mapping
+                candidates[port] = {
+                    "port": port,
+                    "pid": pid,
+                    "gpu_indices": [],  # unknown — not detected via NVML
+                }
+    except OSError:
+        pass
+
     # Probe each candidate endpoint
     endpoints = []
     for port, info in sorted(candidates.items()):
