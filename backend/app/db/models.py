@@ -428,6 +428,14 @@ class Model(Base, TimestampMixin):
     # Admin override for multimodal (NULL = auto-detect, True/False = manual)
     multimodal_override: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
 
+    # Thinking/reasoning support
+    supports_thinking: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    thinking_override: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+
+    # Admin-editable fields
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    model_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
     # Size and performance
     parameter_count: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # "7B", "70B"
     quantization: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # "Q4_K_M", "FP16", etc.

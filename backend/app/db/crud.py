@@ -845,6 +845,7 @@ async def upsert_model(
     modality: Modality = Modality.CHAT,
     context_length: Optional[int] = None,
     supports_multimodal: bool = False,
+    supports_thinking: bool = False,
     supports_structured_output: bool = True,
     is_loaded: bool = False,
     quantization: Optional[str] = None,
@@ -867,14 +868,18 @@ async def upsert_model(
 
     # If admin has set an override, use it instead of auto-detected value
     effective_multimodal = supports_multimodal
+    effective_thinking = supports_thinking
 
     if model:
         if model.multimodal_override is not None:
             effective_multimodal = model.multimodal_override
+        if model.thinking_override is not None:
+            effective_thinking = model.thinking_override
         model.modality = modality
         model.context_length = model.context_length_override if model.context_length_override is not None else context_length
         model.model_max_context = model_max_context
         model.supports_multimodal = effective_multimodal
+        model.supports_thinking = effective_thinking
         model.supports_structured_output = supports_structured_output
         model.is_loaded = is_loaded
         model.quantization = model.quantization_override if model.quantization_override is not None else quantization
@@ -895,6 +900,7 @@ async def upsert_model(
             context_length=context_length,
             model_max_context=model_max_context,
             supports_multimodal=supports_multimodal,
+            supports_thinking=supports_thinking,
             supports_structured_output=supports_structured_output,
             is_loaded=is_loaded,
             quantization=quantization,
@@ -970,6 +976,20 @@ async def set_multimodal_override_by_name(
     return len(models)
 
 
+async def set_thinking_override_by_name(
+    db: AsyncSession, model_name: str, value: Optional[bool]
+) -> int:
+    """Set thinking override for ALL model rows with the given name."""
+    result = await db.execute(select(Model).where(Model.name == model_name))
+    models = list(result.scalars().all())
+    for m in models:
+        m.thinking_override = value
+        if value is not None:
+            m.supports_thinking = value
+    await db.flush()
+    return len(models)
+
+
 async def update_model_overrides_by_name(
     db: AsyncSession, model_name: str, overrides: dict
 ) -> int:
@@ -994,11 +1014,17 @@ async def update_model_overrides_by_name(
         "parent_model_override": "parent_model",
     }
 
+    # Direct fields (admin-only, no auto-detect source)
+    direct_fields = {"description", "model_url"}
+
     result = await db.execute(select(Model).where(Model.name == model_name))
     models = list(result.scalars().all())
     for m in models:
         for field, value in overrides.items():
-            if hasattr(m, field):
+            if field in direct_fields:
+                if hasattr(m, field):
+                    setattr(m, field, value)
+            elif hasattr(m, field):
                 setattr(m, field, value)
                 # Also set the base field so the display value updates immediately
                 base_field = override_to_base.get(field)

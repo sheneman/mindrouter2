@@ -600,6 +600,62 @@ async def reset_model_multimodal(
     )
 
 
+@dashboard_router.post("/admin/models/toggle-thinking")
+async def toggle_model_thinking(
+    request: Request,
+    model_name: str = Form(...),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Toggle the thinking override for all instances of a model."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or (not user.group or not user.group.is_admin):
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    from backend.app.db.models import Model
+    from sqlalchemy import select
+    result = await db.execute(select(Model).where(Model.name == model_name).limit(1))
+    model = result.scalar_one_or_none()
+    if not model:
+        return RedirectResponse(
+            url="/admin/models?error=Model+not+found", status_code=302
+        )
+
+    new_value = not model.supports_thinking
+    await crud.set_thinking_override_by_name(db, model_name, new_value)
+    await db.commit()
+
+    return RedirectResponse(
+        url="/admin/models?success=updated", status_code=302
+    )
+
+
+@dashboard_router.post("/admin/models/reset-thinking")
+async def reset_model_thinking(
+    request: Request,
+    model_name: str = Form(...),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Reset thinking override to auto-detect for all instances of a model."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or (not user.group or not user.group.is_admin):
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    await crud.set_thinking_override_by_name(db, model_name, None)
+    await db.commit()
+
+    return RedirectResponse(
+        url="/admin/models?success=reset", status_code=302
+    )
+
+
 @dashboard_router.post("/admin/models/update-metadata")
 async def update_model_metadata(
     request: Request,
@@ -615,6 +671,8 @@ async def update_model_metadata(
     model_format: Optional[str] = Form(None),
     parent_model: Optional[str] = Form(None),
     capabilities: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
+    model_url: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_async_db),
 ):
     """Update metadata overrides for all instances of a model."""
@@ -649,6 +707,9 @@ async def update_model_metadata(
         "feed_forward_length_override": _int_or_none(feed_forward_length),
         "model_format_override": _str_or_none(model_format),
         "parent_model_override": _str_or_none(parent_model),
+        # Direct fields (admin-only)
+        "description": _str_or_none(description),
+        "model_url": _str_or_none(model_url),
     }
 
     # Capabilities: comma-separated -> JSON array, or None to clear
@@ -694,6 +755,8 @@ async def reset_model_overrides(
         "model_format_override": None,
         "parent_model_override": None,
         "capabilities_override": None,
+        "description": None,
+        "model_url": None,
     }
     await crud.update_model_overrides_by_name(db, model_name, overrides)
     await db.commit()

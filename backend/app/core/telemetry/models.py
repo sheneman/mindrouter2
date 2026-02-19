@@ -30,6 +30,7 @@ class ModelInfo:
     context_length: Optional[int] = None
     model_max_context: Optional[int] = None
     supports_multimodal: bool = False
+    supports_thinking: bool = False
     supports_structured_output: bool = True
     is_loaded: bool = False
     vram_required_gb: Optional[float] = None
