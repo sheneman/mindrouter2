@@ -142,14 +142,18 @@ class TestProbeEndpoint:
     @pytest.mark.asyncio
     async def test_detects_vllm(self):
         """Should detect vLLM from /v1/models response."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
+        # First call (Ollama /api/tags) fails, second call (vLLM /v1/models) succeeds
+        ollama_response = MagicMock()
+        ollama_response.status_code = 404
+
+        vllm_response = MagicMock()
+        vllm_response.status_code = 200
+        vllm_response.json.return_value = {
             "data": [{"id": "qwen/qwen3.5-400b", "object": "model"}]
         }
 
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=mock_response)
+        mock_client.get = AsyncMock(side_effect=[ollama_response, vllm_response])
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
 
@@ -163,10 +167,7 @@ class TestProbeEndpoint:
     @pytest.mark.asyncio
     async def test_detects_ollama(self):
         """Should detect Ollama from /api/tags response."""
-        # First call (vLLM) fails, second call (Ollama) succeeds
-        vllm_response = MagicMock()
-        vllm_response.status_code = 404
-
+        # First call (Ollama /api/tags) succeeds — probe tries Ollama first
         ollama_response = MagicMock()
         ollama_response.status_code = 200
         ollama_response.json.return_value = {
@@ -174,7 +175,7 @@ class TestProbeEndpoint:
         }
 
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=[vllm_response, ollama_response])
+        mock_client.get = AsyncMock(return_value=ollama_response)
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
 

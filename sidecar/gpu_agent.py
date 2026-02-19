@@ -351,6 +351,21 @@ async def _probe_endpoint(port: int) -> Optional[Dict[str, Any]]:
     import httpx
 
     async with httpx.AsyncClient(timeout=3.0) as client:
+        # Try Ollama first: GET /api/tags is Ollama-specific, whereas
+        # /v1/models is served by both Ollama and vLLM (OpenAI-compat).
+        try:
+            resp = await client.get(f"http://localhost:{port}/api/tags")
+            if resp.status_code == 200:
+                data = resp.json()
+                if "models" in data and isinstance(data["models"], list):
+                    models = [
+                        {"id": m.get("name", "unknown")}
+                        for m in data["models"]
+                    ]
+                    return {"engine": "ollama", "models": models}
+        except Exception:
+            pass
+
         # Try vLLM: GET /v1/models
         try:
             resp = await client.get(f"http://localhost:{port}/v1/models")
@@ -362,20 +377,6 @@ async def _probe_endpoint(port: int) -> Optional[Dict[str, Any]]:
                         for m in data["data"]
                     ]
                     return {"engine": "vllm", "models": models}
-        except Exception:
-            pass
-
-        # Try Ollama: GET /api/tags
-        try:
-            resp = await client.get(f"http://localhost:{port}/api/tags")
-            if resp.status_code == 200:
-                data = resp.json()
-                if "models" in data and isinstance(data["models"], list):
-                    models = [
-                        {"id": m.get("name", "unknown")}
-                        for m in data["models"]
-                    ]
-                    return {"engine": "ollama", "models": models}
         except Exception:
             pass
 
