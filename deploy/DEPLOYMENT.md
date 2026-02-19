@@ -141,7 +141,33 @@ docker compose -f docker-compose.prod.yml exec app python scripts/seed_dev_data.
 
 Each GPU inference node needs a sidecar agent running to report GPU metrics back to MindRouter2.
 
-### 10a. Configure Docker daemon on each GPU node
+### 10a. Install NVIDIA Container Toolkit
+
+The sidecar container requires GPU access via `--gpus all`. Install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) on each GPU node:
+
+```bash
+# RHEL/Rocky Linux (aspen nodes)
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo \
+  | sudo tee /etc/yum.repos.d/nvidia-container-toolkit.repo
+sudo dnf install -y nvidia-container-toolkit
+
+# Debian/Ubuntu
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+  | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+  | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+  | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+
+# Configure and restart Docker
+sudo nvidia-ctk runtime configure --driver=docker
+sudo systemctl restart docker
+
+# Verify GPU access
+docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi
+```
+
+### 10b. Configure Docker daemon network on each GPU node
 
 Docker's default bridge network (`172.17.0.0/16`) can collide with campus or institutional routing. Configure each GPU node to use `10.x.x.x` address space:
 
@@ -165,7 +191,7 @@ EOF
 sudo systemctl restart docker
 ```
 
-### 10b. Deploy the sidecar container
+### 10c. Deploy the sidecar container
 
 The sidecar requires a `SIDECAR_SECRET_KEY` for authentication. Generate one per node:
 
@@ -222,7 +248,7 @@ docker run -d --name gpu-sidecar \
   mindrouter-sidecar:v0.11.0
 ```
 
-### 10c. Configure nginx reverse proxy
+### 10d. Configure nginx reverse proxy
 
 Install nginx and create a proxy config so MindRouter2 can reach the sidecar on port 8007:
 
@@ -264,7 +290,7 @@ curl -H "X-Sidecar-Key: your-generated-key" http://localhost:8007/health
 curl -H "X-Sidecar-Key: your-generated-key" http://gpu-server.example.com:8007/health
 ```
 
-### 10d. Register the node in MindRouter2
+### 10e. Register the node in MindRouter2
 
 Include the same key that was set as `SIDECAR_SECRET_KEY` on the sidecar:
 

@@ -387,6 +387,32 @@ Each GPU node runs a lightweight **sidecar agent** (`sidecar/gpu_agent.py`) that
 
 The sidecar must run on each physical GPU server. It requires NVIDIA drivers and the NVIDIA Container Toolkit. A `SIDECAR_SECRET_KEY` environment variable is **required** — the sidecar will refuse to start without it. Generate one with: `python -c "import secrets; print(secrets.token_hex(32))"`
 
+#### NVIDIA Container Toolkit
+
+The sidecar container requires GPU access via `--gpus all`. Install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) on each GPU node:
+
+```bash
+# Debian/Ubuntu
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+  | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+  | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+  | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+
+# RHEL/Rocky Linux
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo \
+  | sudo tee /etc/yum.repos.d/nvidia-container-toolkit.repo
+sudo dnf install -y nvidia-container-toolkit
+
+# Configure and restart Docker
+sudo nvidia-ctk runtime configure --driver=docker
+sudo systemctl restart docker
+
+# Verify GPU access
+docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi
+```
+
 #### Docker network prerequisites
 
 Docker's default bridge network uses `172.17.0.0/16`, which can collide with campus or institutional routing. Configure each GPU node's Docker daemon to use `10.x.x.x` address space before deploying the sidecar:
