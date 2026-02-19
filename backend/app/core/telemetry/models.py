@@ -33,6 +33,15 @@ class ModelInfo:
     is_loaded: bool = False
     vram_required_gb: Optional[float] = None
 
+    # Rich metadata from /api/show (Ollama)
+    model_format: Optional[str] = None  # "gguf", etc.
+    capabilities: Optional[List[str]] = None  # ["completion", "vision", "tools"]
+    embedding_length: Optional[int] = None
+    head_count: Optional[int] = None
+    layer_count: Optional[int] = None
+    feed_forward_length: Optional[int] = None
+    parent_model: Optional[str] = None
+
 
 @dataclass
 class GPUInfo:

@@ -43,7 +43,7 @@
                             <span class="badge bg-success me-2">Multimodal</span>
                             {% endif %}
                             {% if first.context_length %}
-                            <span class="badge bg-secondary me-2">{{ first.context_length }} ctx</span>
+                            <span class="badge bg-secondary me-2">{{ '{:,}'.format(first.context_length) }} ctx</span>
                             {% endif %}
                             {% if first.parameter_count %}
                             <span class="badge bg-secondary me-2">{{ first.parameter_count }}</span>
@@ -56,6 +56,29 @@
                     <div id="model-{{ loop.index }}" class="accordion-collapse collapse"
                          data-bs-parent="#modelsAccordion">
                         <div class="accordion-body">
+                            <!-- Capabilities badges -->
+                            {% if first.capabilities %}
+                            {% set cap_list = first.capabilities | fromjson if first.capabilities is string else [] %}
+                            {% if cap_list %}
+                            <div class="mb-3">
+                                <h6>Capabilities</h6>
+                                {% for cap in cap_list %}
+                                {% if cap == 'completion' %}
+                                <span class="badge bg-primary me-1">completion</span>
+                                {% elif cap == 'vision' %}
+                                <span class="badge bg-success me-1">vision</span>
+                                {% elif cap == 'tools' %}
+                                <span class="badge bg-purple me-1" style="background-color: #6f42c1 !important;">tools</span>
+                                {% elif cap == 'embedding' %}
+                                <span class="badge bg-info me-1">embedding</span>
+                                {% else %}
+                                <span class="badge bg-secondary me-1">{{ cap }}</span>
+                                {% endif %}
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                            {% endif %}
+
                             <div class="row mb-3">
                                 <!-- Model Details -->
                                 <div class="col-md-6">
@@ -64,13 +87,21 @@
                                         <dt class="col-5">Family:</dt>
                                         <dd class="col-7">{{ first.family or 'Unknown' }}</dd>
                                         <dt class="col-5">Context Length:</dt>
-                                        <dd class="col-7">{{ first.context_length or 'Unknown' }}</dd>
+                                        <dd class="col-7">{{ '{:,}'.format(first.context_length) if first.context_length else 'Unknown' }}</dd>
                                         <dt class="col-5">Parameters:</dt>
                                         <dd class="col-7">{{ first.parameter_count or 'Unknown' }}</dd>
                                         <dt class="col-5">Quantization:</dt>
                                         <dd class="col-7">{{ first.quantization or 'N/A' }}</dd>
                                         <dt class="col-5">Modality:</dt>
                                         <dd class="col-7">{{ first.modality.value }}</dd>
+                                        {% if first.model_format %}
+                                        <dt class="col-5">Format:</dt>
+                                        <dd class="col-7">{{ first.model_format }}</dd>
+                                        {% endif %}
+                                        {% if first.parent_model %}
+                                        <dt class="col-5">Parent Model:</dt>
+                                        <dd class="col-7"><small>{{ first.parent_model }}</small></dd>
+                                        {% endif %}
                                     </dl>
                                 </div>
 
@@ -116,6 +147,29 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <!-- Architecture Details (Ollama only) -->
+                            {% if first.embedding_length or first.head_count or first.layer_count or first.feed_forward_length %}
+                            <div class="row mb-3">
+                                <div class="col-12">
+                                    <h6>Architecture</h6>
+                                    <div class="d-flex flex-wrap gap-3 small">
+                                        {% if first.embedding_length %}
+                                        <div><strong>Embedding Dim:</strong> {{ '{:,}'.format(first.embedding_length) }}</div>
+                                        {% endif %}
+                                        {% if first.head_count %}
+                                        <div><strong>Attention Heads:</strong> {{ first.head_count }}</div>
+                                        {% endif %}
+                                        {% if first.layer_count %}
+                                        <div><strong>Layers:</strong> {{ first.layer_count }}</div>
+                                        {% endif %}
+                                        {% if first.feed_forward_length %}
+                                        <div><strong>FFN Size:</strong> {{ '{:,}'.format(first.feed_forward_length) }}</div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                            {% endif %}
 
                             <!-- Endpoints Table -->
                             <h6>Deployed Endpoints</h6>

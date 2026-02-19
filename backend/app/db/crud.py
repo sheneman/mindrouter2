@@ -848,6 +848,13 @@ async def upsert_model(
     supports_structured_output: bool = True,
     is_loaded: bool = False,
     quantization: Optional[str] = None,
+    model_format: Optional[str] = None,
+    capabilities_json: Optional[str] = None,
+    embedding_length: Optional[int] = None,
+    head_count: Optional[int] = None,
+    layer_count: Optional[int] = None,
+    feed_forward_length: Optional[int] = None,
+    parent_model: Optional[str] = None,
 ) -> Model:
     """Create or update a model record."""
     result = await db.execute(
@@ -869,6 +876,13 @@ async def upsert_model(
         model.supports_structured_output = supports_structured_output
         model.is_loaded = is_loaded
         model.quantization = quantization
+        model.model_format = model_format
+        model.capabilities = capabilities_json
+        model.embedding_length = embedding_length
+        model.head_count = head_count
+        model.layer_count = layer_count
+        model.feed_forward_length = feed_forward_length
+        model.parent_model = parent_model
     else:
         model = Model(
             backend_id=backend_id,
@@ -879,6 +893,13 @@ async def upsert_model(
             supports_structured_output=supports_structured_output,
             is_loaded=is_loaded,
             quantization=quantization,
+            model_format=model_format,
+            capabilities=capabilities_json,
+            embedding_length=embedding_length,
+            head_count=head_count,
+            layer_count=layer_count,
+            feed_forward_length=feed_forward_length,
+            parent_model=parent_model,
         )
         db.add(model)
 

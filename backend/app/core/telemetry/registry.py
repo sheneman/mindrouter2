@@ -15,6 +15,7 @@
 """Backend registry - manages backend discovery, health, and telemetry."""
 
 import asyncio
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
@@ -894,6 +895,11 @@ class BackendRegistry:
                         elif "embed" in model_info.name.lower():
                             modality = Modality.EMBEDDING
 
+                        # Serialize capabilities list to JSON string for DB
+                        caps_json = None
+                        if model_info.capabilities:
+                            caps_json = json.dumps(model_info.capabilities)
+
                         await crud.upsert_model(
                             db=db,
                             backend_id=backend_id,
@@ -904,6 +910,13 @@ class BackendRegistry:
                             supports_structured_output=model_info.supports_structured_output,
                             is_loaded=model_info.is_loaded,
                             quantization=model_info.quantization,
+                            model_format=model_info.model_format,
+                            capabilities_json=caps_json,
+                            embedding_length=model_info.embedding_length,
+                            head_count=model_info.head_count,
+                            layer_count=model_info.layer_count,
+                            feed_forward_length=model_info.feed_forward_length,
+                            parent_model=model_info.parent_model,
                         )
                         discovered_names.append(model_info.name)
 

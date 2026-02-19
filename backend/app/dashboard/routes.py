@@ -39,6 +39,7 @@ dashboard_router = APIRouter(tags=["dashboard"])
 # Setup templates
 templates_path = os.path.join(os.path.dirname(__file__), "templates")
 templates = Jinja2Templates(directory=templates_path)
+templates.env.filters["fromjson"] = lambda s: json.loads(s) if s else []
 
 
 # Session management helpers

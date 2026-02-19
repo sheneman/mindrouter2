@@ -432,6 +432,15 @@ class Model(Base, TimestampMixin):
     quantization: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # "Q4_K_M", "FP16", etc.
     vram_required_gb: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
+    # Rich metadata from /api/show (Ollama) — NULL for vLLM models
+    model_format: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # "gguf", etc.
+    capabilities: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON array: ["completion","vision","tools"]
+    embedding_length: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    head_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    layer_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    feed_forward_length: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    parent_model: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+
     # State
     is_loaded: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     last_used: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

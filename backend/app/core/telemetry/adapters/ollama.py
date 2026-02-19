@@ -209,7 +209,7 @@ class OllamaAdapter:
         return None
 
     async def _get_models(self, client: httpx.AsyncClient) -> list[ModelInfo]:
-        """Get list of available models."""
+        """Get list of available models, enriched with /api/show data."""
         models = []
 
         try:
@@ -223,20 +223,12 @@ class OllamaAdapter:
                 if not name:
                     continue
 
-                # Parse model details
+                # Parse model details from /api/tags
                 details = model_data.get("details", {})
-
-                # Determine if model supports multimodal input
-                supports_multimodal = False
-                family = details.get("family", "").lower()
-                name_lower = name.lower()
-                if any(x in name_lower for x in ["llava", "vision", "-vl-", "-vl:"]):
-                    supports_multimodal = True
 
                 # Estimate parameter count from name or details
                 param_count = details.get("parameter_size")
                 if not param_count:
-                    # Try to extract from name (e.g., "llama3.2:7b")
                     for size in ["70b", "34b", "13b", "7b", "3b", "1b"]:
                         if size in name.lower():
                             param_count = size.upper()
@@ -249,15 +241,98 @@ class OllamaAdapter:
                         parameter_count=param_count,
                         quantization=details.get("quantization_level"),
                         context_length=details.get("context_length"),
-                        supports_multimodal=supports_multimodal,
-                        supports_structured_output=True,  # Most Ollama models do
+                        supports_multimodal=False,  # Will be set from capabilities below
+                        supports_structured_output=True,
                     )
                 )
+
+            # Enrich models with /api/show data in parallel
+            if models:
+                show_tasks = [
+                    self._get_model_details(client, m.name) for m in models
+                ]
+                show_results = await asyncio.gather(*show_tasks, return_exceptions=True)
+
+                for model, show_data in zip(models, show_results):
+                    if isinstance(show_data, Exception) or not show_data:
+                        # Fall back to name-based multimodal heuristic
+                        name_lower = model.name.lower()
+                        if any(x in name_lower for x in ["llava", "vision", "-vl-", "-vl:"]):
+                            model.supports_multimodal = True
+                        continue
+
+                    # Capabilities from /api/show
+                    caps = show_data.get("capabilities", [])
+                    if caps:
+                        model.capabilities = caps
+                        model.supports_multimodal = "vision" in caps
+
+                    # Format and parent model from details
+                    show_details = show_data.get("details", {})
+                    model.model_format = show_details.get("format")
+                    model.parent_model = show_details.get("parent_model") or None
+
+                    # Families — use first family if available
+                    families = show_details.get("families")
+                    if families and isinstance(families, list) and families:
+                        # Keep the family from /api/tags if set, otherwise use first from /api/show
+                        if not model.family:
+                            model.family = families[0]
+
+                    # Architecture fields from model_info
+                    model_info = show_data.get("model_info", {})
+                    if model_info:
+                        arch_fields = self._extract_arch_fields(model_info)
+                        # Override context_length if available (more authoritative)
+                        if arch_fields.get("context_length") is not None:
+                            model.context_length = arch_fields["context_length"]
+                        model.embedding_length = arch_fields.get("embedding_length")
+                        model.head_count = arch_fields.get("head_count")
+                        model.layer_count = arch_fields.get("layer_count")
+                        model.feed_forward_length = arch_fields.get("feed_forward_length")
 
         except Exception as e:
             logger.warning("ollama_get_models_failed", error=str(e))
 
         return models
+
+    async def _get_model_details(self, client: httpx.AsyncClient, model_name: str) -> dict:
+        """Fetch rich model details from /api/show.
+
+        Args:
+            client: HTTP client
+            model_name: Model name to query
+
+        Returns:
+            Parsed JSON response or empty dict on failure
+        """
+        try:
+            response = await client.post(
+                "/api/show",
+                json={"name": model_name},
+                timeout=5.0,
+            )
+            if response.status_code == 200:
+                return response.json()
+        except Exception as e:
+            logger.debug("ollama_show_failed", model=model_name, error=str(e))
+        return {}
+
+    @staticmethod
+    def _extract_arch_fields(model_info: dict) -> dict:
+        """Extract architecture fields from model_info dict.
+
+        model_info keys are prefixed with the architecture name,
+        e.g. "qwen3.context_length", "qwen3.embedding_length".
+        """
+        arch = model_info.get("general.architecture", "")
+        return {
+            "context_length": model_info.get(f"{arch}.context_length"),
+            "embedding_length": model_info.get(f"{arch}.embedding_length"),
+            "head_count": model_info.get(f"{arch}.attention.head_count"),
+            "layer_count": model_info.get(f"{arch}.block_count"),
+            "feed_forward_length": model_info.get(f"{arch}.feed_forward_length"),
+        }
 
     async def _get_loaded_models(self, client: httpx.AsyncClient) -> list[str]:
         """Get list of currently loaded models."""
