@@ -18,7 +18,13 @@ from typing import Optional
 
 import httpx
 
-from backend.app.core.telemetry.models import GPUDeviceSnapshot, SidecarResponse
+from backend.app.core.telemetry.models import (
+    DiscoveredEndpoint,
+    DiscoveredModel,
+    DiscoverResponse,
+    GPUDeviceSnapshot,
+    SidecarResponse,
+)
 from backend.app.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -128,4 +134,52 @@ class SidecarClient:
             cuda_version=data.get("cuda_version"),
             gpu_count=data.get("gpu_count", 0),
             gpus=gpus,
+            sidecar_version=data.get("sidecar_version"),
         )
+
+    async def discover_endpoints(self) -> Optional[DiscoverResponse]:
+        """Call GET /discover on the sidecar to find inference endpoints.
+
+        Returns:
+            DiscoverResponse with discovered endpoints, or None if unavailable
+        """
+        try:
+            client = await self._get_client()
+            response = await client.get("/discover", timeout=30.0)
+
+            if response.status_code != 200:
+                logger.warning(
+                    "sidecar_discover_bad_status",
+                    url=self.base_url,
+                    status=response.status_code,
+                )
+                return None
+
+            data = response.json()
+            endpoints = []
+            for ep_data in data.get("endpoints", []):
+                models = [
+                    DiscoveredModel(id=m.get("id", ""))
+                    for m in ep_data.get("models", [])
+                ]
+                endpoints.append(
+                    DiscoveredEndpoint(
+                        port=ep_data.get("port", 0),
+                        pid=ep_data.get("pid", 0),
+                        engine=ep_data.get("engine", ""),
+                        gpu_indices=ep_data.get("gpu_indices", []),
+                        models=models,
+                        url=ep_data.get("url", ""),
+                    )
+                )
+            return DiscoverResponse(
+                endpoints=endpoints,
+                sidecar_version=data.get("sidecar_version"),
+            )
+
+        except httpx.TimeoutException:
+            logger.warning("sidecar_discover_timeout", url=self.base_url)
+            return None
+        except Exception as e:
+            logger.warning("sidecar_discover_error", url=self.base_url, error=str(e))
+            return None

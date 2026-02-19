@@ -56,6 +56,7 @@ class NodeResponse(BaseModel):
     gpu_count: Optional[int]
     driver_version: Optional[str]
     cuda_version: Optional[str]
+    sidecar_version: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -471,6 +472,7 @@ async def update_node(
         gpu_count=updated.gpu_count,
         driver_version=updated.driver_version,
         cuda_version=updated.cuda_version,
+        sidecar_version=updated.sidecar_version,
     )
 
 
@@ -514,6 +516,7 @@ async def register_node(
         gpu_count=node.gpu_count,
         driver_version=node.driver_version,
         cuda_version=node.cuda_version,
+        sidecar_version=node.sidecar_version,
     )
 
 
@@ -535,6 +538,7 @@ async def list_nodes(
             gpu_count=n.gpu_count,
             driver_version=n.driver_version,
             cuda_version=n.cuda_version,
+            sidecar_version=n.sidecar_version,
         )
         for n in nodes
     ]
@@ -588,6 +592,110 @@ async def refresh_node(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Node has no sidecar configured",
         )
+
+
+class AcceptEndpointRequest(BaseModel):
+    """Request to register a discovered endpoint as a backend."""
+    name: str = Field(..., min_length=1, max_length=100)
+    url: str = Field(..., min_length=1)
+    engine: BackendEngine
+    gpu_indices: Optional[List[int]] = None
+    max_concurrent: int = Field(default=4, ge=1)
+
+
+@router.post("/nodes/{node_id}/discover")
+async def discover_node_endpoints(
+    node_id: int,
+    admin: User = Depends(require_admin()),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Trigger endpoint auto-discovery on a node via its sidecar."""
+    node = await crud.get_node_by_id(db, node_id)
+    if not node:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Node not found",
+        )
+
+    registry = get_registry()
+    result = await registry.discover_node_endpoints(node_id)
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Node has no sidecar configured or sidecar is unreachable",
+        )
+
+    return {
+        "node_id": node_id,
+        "endpoints": [
+            {
+                "port": ep.port,
+                "pid": ep.pid,
+                "engine": ep.engine,
+                "gpu_indices": ep.gpu_indices,
+                "models": [{"id": m.id} for m in ep.models],
+                "url": ep.url,
+            }
+            for ep in result.endpoints
+        ],
+        "sidecar_version": result.sidecar_version,
+    }
+
+
+@router.post("/nodes/{node_id}/accept-endpoint")
+async def accept_discovered_endpoint(
+    node_id: int,
+    request: AcceptEndpointRequest,
+    admin: User = Depends(require_admin()),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Register a discovered endpoint as a backend."""
+    node = await crud.get_node_by_id(db, node_id)
+    if not node:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Node not found",
+        )
+
+    # Check for duplicate name or URL
+    existing_name = await crud.get_backend_by_name(db, request.name)
+    if existing_name:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Backend with name '{request.name}' already exists",
+        )
+    existing_url = await crud.get_backend_by_url(db, request.url)
+    if existing_url:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Backend with URL '{request.url}' already exists",
+        )
+
+    registry = get_registry()
+    backend = await registry.register_backend(
+        name=request.name,
+        url=request.url,
+        engine=request.engine,
+        max_concurrent=request.max_concurrent,
+        node_id=node_id,
+        gpu_indices=request.gpu_indices,
+        db=db,
+    )
+
+    logger.info(
+        "endpoint_accepted_by_admin",
+        admin_id=admin.id,
+        node_id=node_id,
+        backend_id=backend.id,
+        name=request.name,
+    )
+
+    return {
+        "status": "registered",
+        "backend_id": backend.id,
+        "name": backend.name,
+        "url": backend.url,
+    }
 
 
 # Queue Management

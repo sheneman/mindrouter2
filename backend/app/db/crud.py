@@ -477,6 +477,7 @@ async def update_node_hardware(
     gpu_count: Optional[int] = None,
     driver_version: Optional[str] = None,
     cuda_version: Optional[str] = None,
+    sidecar_version: Optional[str] = None,
 ) -> Optional[Node]:
     """Update node hardware info from sidecar."""
     result = await db.execute(select(Node).where(Node.id == node_id))
@@ -488,6 +489,8 @@ async def update_node_hardware(
             node.driver_version = driver_version
         if cuda_version is not None:
             node.cuda_version = cuda_version
+        if sidecar_version is not None:
+            node.sidecar_version = sidecar_version
         await db.flush()
     return node
 

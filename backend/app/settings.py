@@ -15,10 +15,29 @@
 """Application settings using Pydantic Settings."""
 
 from functools import lru_cache
+from pathlib import Path
 from typing import List, Optional
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _get_version() -> str:
+    """Read version from pyproject.toml (single source of truth)."""
+    try:
+        from importlib.metadata import version
+        return version("mindrouter2")
+    except Exception:
+        pass
+    # Fallback: read pyproject.toml directly (works in dev without pip install)
+    try:
+        import tomllib
+        toml_path = Path(__file__).resolve().parents[2] / "pyproject.toml"
+        with open(toml_path, "rb") as f:
+            data = tomllib.load(f)
+        return data["project"]["version"]
+    except Exception:
+        return "0.0.0"
 
 
 class Settings(BaseSettings):
@@ -33,7 +52,7 @@ class Settings(BaseSettings):
 
     # Application
     app_name: str = "MindRouter2"
-    app_version: str = "1.0.0"
+    app_version: str = Field(default_factory=_get_version)
     debug: bool = False
     reload: bool = False
 

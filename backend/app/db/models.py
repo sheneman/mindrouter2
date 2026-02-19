@@ -311,6 +311,7 @@ class Node(Base, TimestampMixin):
     gpu_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     driver_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     cuda_version: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    sidecar_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
     # Relationships
     gpu_devices: Mapped[List["GPUDevice"]] = relationship("GPUDevice", back_populates="node")
