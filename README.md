@@ -471,11 +471,15 @@ docker build -t mindrouter-sidecar:latest \
   -f Dockerfile.sidecar \
   https://github.com/sheneman/mindrouter2.git:sidecar
 
-# Run bound to localhost only (nginx will proxy external traffic)
+# Run with host PID/network namespaces (required for endpoint discovery)
 docker run -d --name gpu-sidecar \
   --gpus all \
-  -p 127.0.0.1:18007:8007 \
+  --pid=host \
+  --network=host \
+  --cap-add SYS_PTRACE \
   --env-file /etc/mindrouter/sidecar.env \
+  -e GPU_AGENT_PORT=18007 \
+  -e GPU_AGENT_HOST=127.0.0.1 \
   --restart unless-stopped \
   mindrouter-sidecar:v0.11.0
 ```

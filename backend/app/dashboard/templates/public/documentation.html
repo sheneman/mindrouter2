@@ -1389,10 +1389,16 @@ sudo chmod 600 /etc/mindrouter/sidecar.env</code></pre>
   https://github.com/sheneman/mindrouter2.git:sidecar</code></pre>
 
                 <h4>Run the sidecar</h4>
+                <p>The sidecar needs host PID and network namespaces for endpoint discovery (scanning <code>/proc</code> for inference processes and their listening ports).
+                   <code>SYS_PTRACE</code> allows reading <code>/proc/{pid}/fd</code> to map socket inodes to PIDs.</p>
 <pre><code>docker run -d --name gpu-sidecar \
   --gpus all \
-  -p 127.0.0.1:18007:8007 \
+  --pid=host \
+  --network=host \
+  --cap-add SYS_PTRACE \
   --env-file /etc/mindrouter/sidecar.env \
+  -e GPU_AGENT_PORT=18007 \
+  -e GPU_AGENT_HOST=127.0.0.1 \
   --restart unless-stopped \
   mindrouter-sidecar:v0.11.0</code></pre>
 
@@ -1403,12 +1409,17 @@ sudo chmod 600 /etc/mindrouter/sidecar.env</code></pre>
 docker stop gpu-sidecar && docker rm gpu-sidecar
 docker run -d --name gpu-sidecar \
   --gpus all \
-  -p 127.0.0.1:18007:8007 \
+  --pid=host \
+  --network=host \
+  --cap-add SYS_PTRACE \
   --env-file /etc/mindrouter/sidecar.env \
+  -e GPU_AGENT_PORT=18007 \
+  -e GPU_AGENT_HOST=127.0.0.1 \
   --restart unless-stopped \
   mindrouter-sidecar:v0.11.0</code></pre>
 
-                <p>In production, bind the sidecar to localhost only (as shown above) and use an nginx reverse proxy on port 8007 to handle external traffic.
+                <p>With <code>--network=host</code>, the sidecar binds directly to the host's <code>127.0.0.1:18007</code>.
+                   Use an nginx reverse proxy on port 8007 to handle external traffic.
                    The env file at <code>/etc/mindrouter/sidecar.env</code> persists the secret key across upgrades — generate it once per node and it's reused automatically.</p>
             </section>
 
