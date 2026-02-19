@@ -247,6 +247,7 @@ class OllamaAdapter:
                         name=name,
                         family=details.get("family"),
                         parameter_count=param_count,
+                        quantization=details.get("quantization_level"),
                         context_length=details.get("context_length"),
                         supports_multimodal=supports_multimodal,
                         supports_structured_output=True,  # Most Ollama models do

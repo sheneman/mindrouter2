@@ -847,6 +847,7 @@ async def upsert_model(
     supports_multimodal: bool = False,
     supports_structured_output: bool = True,
     is_loaded: bool = False,
+    quantization: Optional[str] = None,
 ) -> Model:
     """Create or update a model record."""
     result = await db.execute(
@@ -867,6 +868,7 @@ async def upsert_model(
         model.supports_multimodal = effective_multimodal
         model.supports_structured_output = supports_structured_output
         model.is_loaded = is_loaded
+        model.quantization = quantization
     else:
         model = Model(
             backend_id=backend_id,
@@ -876,6 +878,7 @@ async def upsert_model(
             supports_multimodal=supports_multimodal,
             supports_structured_output=supports_structured_output,
             is_loaded=is_loaded,
+            quantization=quantization,
         )
         db.add(model)
 
@@ -913,6 +916,32 @@ async def get_all_models_with_backends(db: AsyncSession) -> list[Model]:
         select(Model).options(selectinload(Model.backend)).order_by(Model.name)
     )
     return list(result.scalars().all())
+
+
+async def get_models_grouped_by_name(db: AsyncSession) -> dict:
+    """Get all models grouped by name, each with backend eagerly loaded."""
+    result = await db.execute(
+        select(Model).options(selectinload(Model.backend)).order_by(Model.name)
+    )
+    models = list(result.scalars().all())
+    grouped: dict = {}
+    for m in models:
+        grouped.setdefault(m.name, []).append(m)
+    return grouped
+
+
+async def set_multimodal_override_by_name(
+    db: AsyncSession, model_name: str, value: Optional[bool]
+) -> int:
+    """Set multimodal override for ALL model rows with the given name."""
+    result = await db.execute(select(Model).where(Model.name == model_name))
+    models = list(result.scalars().all())
+    for m in models:
+        m.multimodal_override = value
+        if value is not None:
+            m.supports_multimodal = value
+    await db.flush()
+    return len(models)
 
 
 async def remove_stale_models(

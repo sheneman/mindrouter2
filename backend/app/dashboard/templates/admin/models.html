@@ -27,91 +27,152 @@
             </div>
             {% endif %}
 
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">All Models ({{ models|length }})</h5>
-                </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-hover mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Name</th>
-                                    <th>Backend</th>
-                                    <th>Modality</th>
-                                    <th>Context</th>
-                                    <th>Params</th>
-                                    <th>Loaded</th>
-                                    <th>Multimodal</th>
-                                    <th>Override</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for model in models %}
-                                <tr>
-                                    <td><code>{{ model.name }}</code></td>
-                                    <td>
-                                        {% if model.backend %}
-                                            <span class="badge bg-primary">{{ model.backend.name }}</span>
-                                        {% else %}
-                                            <span class="text-muted">-</span>
-                                        {% endif %}
-                                    </td>
-                                    <td>{{ model.modality.value }}</td>
-                                    <td>{{ model.context_length or '-' }}</td>
-                                    <td>{{ model.parameter_count or '-' }}</td>
-                                    <td>
-                                        {% if model.is_loaded %}
-                                            <span class="badge bg-success">Yes</span>
-                                        {% else %}
-                                            <span class="badge bg-secondary">No</span>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        {% if model.supports_multimodal %}
-                                            <span class="badge bg-success">Yes</span>
-                                        {% else %}
-                                            <span class="badge bg-secondary">No</span>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        {% if model.multimodal_override is not none %}
-                                            <span class="badge bg-info">Manual</span>
-                                        {% else %}
-                                            <span class="badge bg-secondary">Auto</span>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        <form method="POST" action="/admin/models/{{ model.id }}/toggle-multimodal" class="d-inline">
-                                            <button type="submit" class="btn btn-sm {% if model.supports_multimodal %}btn-outline-warning{% else %}btn-outline-success{% endif %}" title="Toggle multimodal">
-                                                {% if model.supports_multimodal %}
-                                                    <i class="bi bi-toggle-on"></i>
-                                                {% else %}
-                                                    <i class="bi bi-toggle-off"></i>
+            <p class="text-muted mb-3">{{ grouped_models|length }} unique model{{ 's' if grouped_models|length != 1 }} across all backends</p>
+
+            {% if grouped_models %}
+            <div class="accordion" id="modelsAccordion">
+                {% for model_name, instances in grouped_models.items() %}
+                {% set first = instances[0] %}
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button"
+                                data-bs-toggle="collapse" data-bs-target="#model-{{ loop.index }}">
+                            <span class="me-3"><code>{{ model_name }}</code></span>
+                            <span class="badge bg-info me-2">{{ instances|length }} endpoint{{ 's' if instances|length > 1 }}</span>
+                            {% if first.supports_multimodal %}
+                            <span class="badge bg-success me-2">Multimodal</span>
+                            {% endif %}
+                            {% if first.context_length %}
+                            <span class="badge bg-secondary me-2">{{ first.context_length }} ctx</span>
+                            {% endif %}
+                            {% if first.parameter_count %}
+                            <span class="badge bg-secondary me-2">{{ first.parameter_count }}</span>
+                            {% endif %}
+                            {% if first.quantization %}
+                            <span class="badge bg-warning text-dark me-2">{{ first.quantization }}</span>
+                            {% endif %}
+                        </button>
+                    </h2>
+                    <div id="model-{{ loop.index }}" class="accordion-collapse collapse"
+                         data-bs-parent="#modelsAccordion">
+                        <div class="accordion-body">
+                            <div class="row mb-3">
+                                <!-- Model Details -->
+                                <div class="col-md-6">
+                                    <h6>Model Details</h6>
+                                    <dl class="row small mb-0">
+                                        <dt class="col-5">Family:</dt>
+                                        <dd class="col-7">{{ first.family or 'Unknown' }}</dd>
+                                        <dt class="col-5">Context Length:</dt>
+                                        <dd class="col-7">{{ first.context_length or 'Unknown' }}</dd>
+                                        <dt class="col-5">Parameters:</dt>
+                                        <dd class="col-7">{{ first.parameter_count or 'Unknown' }}</dd>
+                                        <dt class="col-5">Quantization:</dt>
+                                        <dd class="col-7">{{ first.quantization or 'N/A' }}</dd>
+                                        <dt class="col-5">Modality:</dt>
+                                        <dd class="col-7">{{ first.modality.value }}</dd>
+                                    </dl>
+                                </div>
+
+                                <!-- Multimodal Control -->
+                                <div class="col-md-6">
+                                    <h6>Multimodal Setting</h6>
+                                    <div class="card">
+                                        <div class="card-body py-2">
+                                            <div class="d-flex align-items-center justify-content-between mb-2">
+                                                <span>
+                                                    {% if first.supports_multimodal %}
+                                                    <span class="badge bg-success">Multimodal: ON</span>
+                                                    {% else %}
+                                                    <span class="badge bg-secondary">Multimodal: OFF</span>
+                                                    {% endif %}
+                                                </span>
+                                                <span>
+                                                    {% if first.multimodal_override is not none %}
+                                                    <span class="badge bg-info">Manual Override</span>
+                                                    {% else %}
+                                                    <span class="badge bg-secondary">Auto-detected</span>
+                                                    {% endif %}
+                                                </span>
+                                            </div>
+                                            <div>
+                                                <form method="POST" action="/admin/models/toggle-multimodal" class="d-inline">
+                                                    <input type="hidden" name="model_name" value="{{ model_name }}">
+                                                    <button type="submit" class="btn btn-sm {{ 'btn-outline-warning' if first.supports_multimodal else 'btn-outline-success' }}">
+                                                        <i class="bi {{ 'bi-toggle-on' if first.supports_multimodal else 'bi-toggle-off' }}"></i>
+                                                        {{ 'Disable' if first.supports_multimodal else 'Enable' }} Multimodal
+                                                    </button>
+                                                </form>
+                                                {% if first.multimodal_override is not none %}
+                                                <form method="POST" action="/admin/models/reset-multimodal" class="d-inline">
+                                                    <input type="hidden" name="model_name" value="{{ model_name }}">
+                                                    <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                                        <i class="bi bi-arrow-counterclockwise"></i> Reset to Auto
+                                                    </button>
+                                                </form>
                                                 {% endif %}
-                                            </button>
-                                        </form>
-                                        {% if model.multimodal_override is not none %}
-                                        <form method="POST" action="/admin/models/{{ model.id }}/reset-multimodal" class="d-inline">
-                                            <button type="submit" class="btn btn-sm btn-outline-secondary" title="Reset to auto-detect">
-                                                <i class="bi bi-arrow-counterclockwise"></i>
-                                            </button>
-                                        </form>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                                {% if not models %}
-                                <tr>
-                                    <td colspan="9" class="text-center text-muted py-4">No models discovered yet.</td>
-                                </tr>
-                                {% endif %}
-                            </tbody>
-                        </table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Endpoints Table -->
+                            <h6>Deployed Endpoints</h6>
+                            <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                                <table class="table table-sm table-hover mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Backend</th>
+                                            <th>Engine</th>
+                                            <th>URL</th>
+                                            <th>Status</th>
+                                            <th>Loaded</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for m in instances %}
+                                        <tr>
+                                            <td>{{ m.backend.name if m.backend else '-' }}</td>
+                                            <td>
+                                                {% if m.backend %}
+                                                <span class="badge bg-primary">{{ m.backend.engine.value }}</span>
+                                                {% else %}
+                                                -
+                                                {% endif %}
+                                            </td>
+                                            <td><small class="text-muted">{{ m.backend.url if m.backend else '-' }}</small></td>
+                                            <td>
+                                                {% if m.backend and m.backend.status.value == 'healthy' %}
+                                                <span class="badge bg-success">Healthy</span>
+                                                {% elif m.backend %}
+                                                <span class="badge bg-danger">{{ m.backend.status.value }}</span>
+                                                {% else %}
+                                                <span class="badge bg-secondary">Unknown</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                {% if m.is_loaded %}
+                                                <span class="badge bg-success">Yes</span>
+                                                {% else %}
+                                                <span class="badge bg-secondary">No</span>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
+                {% endfor %}
             </div>
+            {% else %}
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle"></i> No models discovered yet. Models will appear here once backends are registered and polled.
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>

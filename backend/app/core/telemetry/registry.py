@@ -903,6 +903,7 @@ class BackendRegistry:
                             supports_multimodal=model_info.supports_multimodal,
                             supports_structured_output=model_info.supports_structured_output,
                             is_loaded=model_info.is_loaded,
+                            quantization=model_info.quantization,
                         )
                         discovered_names.append(model_info.name)
 

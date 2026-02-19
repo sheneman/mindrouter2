@@ -429,6 +429,7 @@ class Model(Base, TimestampMixin):
 
     # Size and performance
     parameter_count: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # "7B", "70B"
+    quantization: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # "Q4_K_M", "FP16", etc.
     vram_required_gb: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     # State
