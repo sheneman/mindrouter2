@@ -45,7 +45,6 @@
 | `backend/app/tests/unit/test_anthropic_translator.py` | 19 | AnthropicIn translator: Messages API request/response, multimodal, thinking, streaming format |
 | `backend/app/tests/unit/test_tool_calling.py` | 33 | Tool calling: schemas, OpenAI/Ollama/Anthropic inbound, vLLM/Ollama outbound, round-trips |
 | `backend/app/tests/unit/test_sidecar_client.py` | 16 | GPU sidecar client: auth, GPU info retrieval, communication |
-| `backend/app/tests/unit/test_sidecar_discover.py` | 10 | Sidecar auto-discovery: PID→GPU mapping, port discovery, endpoint probing (vLLM/Ollama) |
 | `backend/app/tests/unit/test_version_alignment.py` | 6 | Version alignment: pyproject.toml reading, sidecar VERSION file consistency |
 | `backend/app/tests/unit/test_accessibility.py` | 96 | WCAG 2.1 Level A/AA: ARIA, semantic HTML, heading hierarchy, forms, sidebar include |
 

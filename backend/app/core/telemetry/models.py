@@ -160,28 +160,3 @@ class CircuitBreakerState:
         return datetime.now(timezone.utc) >= self.circuit_open_until
 
 
-@dataclass
-class DiscoveredModel:
-    """A model found on a discovered endpoint."""
-
-    id: str = ""
-
-
-@dataclass
-class DiscoveredEndpoint:
-    """An inference endpoint discovered on a node via sidecar."""
-
-    port: int = 0
-    pid: int = 0
-    engine: str = ""  # "vllm" or "ollama"
-    gpu_indices: List[int] = field(default_factory=list)
-    models: List[DiscoveredModel] = field(default_factory=list)
-    url: str = ""
-
-
-@dataclass
-class DiscoverResponse:
-    """Response from sidecar /discover endpoint."""
-
-    endpoints: List[DiscoveredEndpoint] = field(default_factory=list)
-    sidecar_version: Optional[str] = None

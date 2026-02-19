@@ -28,7 +28,6 @@ from backend.app.core.telemetry.models import (
     BackendCapabilities,
     BackendHealth,
     CircuitBreakerState,
-    DiscoverResponse,
     SidecarResponse,
     TelemetrySnapshot,
 )
@@ -71,9 +70,6 @@ class BackendRegistry:
 
         # Latest per-node sidecar data (cached for backend telemetry phase)
         self._node_sidecar_data: Dict[int, Optional[SidecarResponse]] = {}
-
-        # Cached discovery results per node
-        self._discovered_endpoints: Dict[int, DiscoverResponse] = {}
 
         # Circuit breaker state per backend
         self._circuit_breakers: Dict[int, CircuitBreakerState] = {}
@@ -564,21 +560,6 @@ class BackendRegistry:
             return False
         await self._collect_node_telemetry(node_id)
         return True
-
-    async def discover_node_endpoints(self, node_id: int) -> Optional[DiscoverResponse]:
-        """Trigger endpoint discovery on a node via its sidecar."""
-        sidecar_client = self._sidecar_clients.get(node_id)
-        if not sidecar_client:
-            return None
-
-        result = await sidecar_client.discover_endpoints()
-        if result:
-            self._discovered_endpoints[node_id] = result
-        return result
-
-    def get_cached_discovery(self, node_id: int) -> Optional[DiscoverResponse]:
-        """Get cached discovery results for a node."""
-        return self._discovered_endpoints.get(node_id)
 
     # ------------------------------------------------------------------
     # Circuit breaker & reactive health
