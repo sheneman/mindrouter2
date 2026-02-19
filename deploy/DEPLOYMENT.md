@@ -173,16 +173,20 @@ The sidecar requires a `SIDECAR_SECRET_KEY` for authentication. Generate one per
 python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-Clone the repo (or copy the sidecar directory) to the GPU server, then build and run. In production, bind the container to localhost only and use nginx as a reverse proxy:
+Build and deploy the sidecar directly from GitHub on each GPU server. In production, bind the container to localhost only and use nginx as a reverse proxy:
 
 ```bash
 ssh user@gpu-server
-cd /scratch  # or /opt
-git clone https://github.com/sheneman/mindrouter2.git
-cd mindrouter2/sidecar
 
-# Build the sidecar image
-docker build -t mindrouter-sidecar -f Dockerfile.sidecar .
+# Build a specific release tag directly from GitHub (no clone needed)
+docker build -t mindrouter-sidecar:v0.11.0 \
+  -f Dockerfile.sidecar \
+  https://github.com/sheneman/mindrouter2.git#v0.11.0:sidecar
+
+# Or build latest from master
+docker build -t mindrouter-sidecar:latest \
+  -f Dockerfile.sidecar \
+  https://github.com/sheneman/mindrouter2.git:sidecar
 
 # Run bound to localhost only (nginx will proxy external traffic)
 docker run -d --name gpu-sidecar \
@@ -190,7 +194,22 @@ docker run -d --name gpu-sidecar \
   -p 127.0.0.1:18007:8007 \
   -e SIDECAR_SECRET_KEY=your-generated-key \
   --restart unless-stopped \
-  mindrouter-sidecar
+  mindrouter-sidecar:v0.11.0
+```
+
+To upgrade an existing sidecar to a new version:
+
+```bash
+docker build -t mindrouter-sidecar:v0.11.0 \
+  -f Dockerfile.sidecar \
+  https://github.com/sheneman/mindrouter2.git#v0.11.0:sidecar
+docker stop gpu-sidecar && docker rm gpu-sidecar
+docker run -d --name gpu-sidecar \
+  --gpus all \
+  -p 127.0.0.1:18007:8007 \
+  -e SIDECAR_SECRET_KEY=your-generated-key \
+  --restart unless-stopped \
+  mindrouter-sidecar:v0.11.0
 ```
 
 ### 10c. Configure nginx reverse proxy

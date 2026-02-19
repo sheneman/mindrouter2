@@ -420,19 +420,43 @@ export SIDECAR_SECRET_KEY=your-generated-key
 docker compose --profile gpu up gpu-sidecar
 ```
 
-**Option B: Standalone Docker + nginx reverse proxy (production — run on each GPU node)**
+**Option B: Build directly from GitHub (production — run on each GPU node)**
 
-In production, bind the sidecar container to localhost only and front it with an nginx reverse proxy. This prevents direct external access to the Docker-mapped port.
+Build and deploy a specific version directly from the repository without cloning:
 
 ```bash
-# On each GPU server:
-docker build -t mindrouter-sidecar -f sidecar/Dockerfile.sidecar sidecar/
+# Build a specific release tag
+docker build -t mindrouter-sidecar:v0.11.0 \
+  -f Dockerfile.sidecar \
+  https://github.com/sheneman/mindrouter2.git#v0.11.0:sidecar
+
+# Or build latest from master
+docker build -t mindrouter-sidecar:latest \
+  -f Dockerfile.sidecar \
+  https://github.com/sheneman/mindrouter2.git:sidecar
+
+# Run bound to localhost only (nginx will proxy external traffic)
 docker run -d --name gpu-sidecar \
   --gpus all \
   -p 127.0.0.1:18007:8007 \
   -e SIDECAR_SECRET_KEY=your-generated-key \
   --restart unless-stopped \
-  mindrouter-sidecar
+  mindrouter-sidecar:v0.11.0
+```
+
+To upgrade an existing sidecar to a new version:
+
+```bash
+docker build -t mindrouter-sidecar:v0.11.0 \
+  -f Dockerfile.sidecar \
+  https://github.com/sheneman/mindrouter2.git#v0.11.0:sidecar
+docker stop gpu-sidecar && docker rm gpu-sidecar
+docker run -d --name gpu-sidecar \
+  --gpus all \
+  -p 127.0.0.1:18007:8007 \
+  -e SIDECAR_SECRET_KEY=your-generated-key \
+  --restart unless-stopped \
+  mindrouter-sidecar:v0.11.0
 ```
 
 Then configure nginx to proxy external port 8007 to the container:

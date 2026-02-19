@@ -1345,6 +1345,43 @@ Anthropic Request --&gt; AnthropicInTranslator --&gt; CanonicalChatRequest
                     <li>Node and backend registration</li>
                     <li>Verification and ongoing operations</li>
                 </ul>
+
+                <h3>GPU Sidecar Deployment</h3>
+                <p>The GPU sidecar agent runs on each inference node to expose per-GPU hardware metrics and enable auto-discovery of inference endpoints.
+                   Build and deploy directly from GitHub — no need to clone the repository:</p>
+
+                <h4>Build a specific version</h4>
+<pre><code>docker build -t mindrouter-sidecar:v0.11.0 \
+  -f Dockerfile.sidecar \
+  https://github.com/sheneman/mindrouter2.git#v0.11.0:sidecar</code></pre>
+
+                <h4>Build latest from master</h4>
+<pre><code>docker build -t mindrouter-sidecar:latest \
+  -f Dockerfile.sidecar \
+  https://github.com/sheneman/mindrouter2.git:sidecar</code></pre>
+
+                <h4>Run the sidecar</h4>
+<pre><code>docker run -d --name gpu-sidecar \
+  --gpus all \
+  -p 127.0.0.1:18007:8007 \
+  -e SIDECAR_SECRET_KEY=your-generated-key \
+  --restart unless-stopped \
+  mindrouter-sidecar:v0.11.0</code></pre>
+
+                <h4>Upgrade to a new version</h4>
+<pre><code>docker build -t mindrouter-sidecar:v0.11.0 \
+  -f Dockerfile.sidecar \
+  https://github.com/sheneman/mindrouter2.git#v0.11.0:sidecar
+docker stop gpu-sidecar && docker rm gpu-sidecar
+docker run -d --name gpu-sidecar \
+  --gpus all \
+  -p 127.0.0.1:18007:8007 \
+  -e SIDECAR_SECRET_KEY=your-generated-key \
+  --restart unless-stopped \
+  mindrouter-sidecar:v0.11.0</code></pre>
+
+                <p>In production, bind the sidecar to localhost only (as shown above) and use an nginx reverse proxy on port 8007 to handle external traffic.
+                   Generate a unique <code>SIDECAR_SECRET_KEY</code> per node with: <code>python3 -c "import secrets; print(secrets.token_hex(32))"</code></p>
             </section>
 
             <hr>
