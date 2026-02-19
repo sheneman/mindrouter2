@@ -441,6 +441,19 @@ class Model(Base, TimestampMixin):
     feed_forward_length: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     parent_model: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
 
+    # Admin overrides for metadata (NULL = use auto-detected, non-NULL = manual)
+    context_length_override: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    embedding_length_override: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    head_count_override: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    layer_count_override: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    feed_forward_length_override: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    capabilities_override: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON text
+    family_override: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    parameter_count_override: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    quantization_override: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    model_format_override: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    parent_model_override: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+
     # State
     is_loaded: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     last_used: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

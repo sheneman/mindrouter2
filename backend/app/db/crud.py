@@ -871,18 +871,20 @@ async def upsert_model(
         if model.multimodal_override is not None:
             effective_multimodal = model.multimodal_override
         model.modality = modality
-        model.context_length = context_length
+        model.context_length = model.context_length_override if model.context_length_override is not None else context_length
         model.supports_multimodal = effective_multimodal
         model.supports_structured_output = supports_structured_output
         model.is_loaded = is_loaded
-        model.quantization = quantization
-        model.model_format = model_format
-        model.capabilities = capabilities_json
-        model.embedding_length = embedding_length
-        model.head_count = head_count
-        model.layer_count = layer_count
-        model.feed_forward_length = feed_forward_length
-        model.parent_model = parent_model
+        model.quantization = model.quantization_override if model.quantization_override is not None else quantization
+        model.model_format = model.model_format_override if model.model_format_override is not None else model_format
+        model.capabilities = model.capabilities_override if model.capabilities_override is not None else capabilities_json
+        model.embedding_length = model.embedding_length_override if model.embedding_length_override is not None else embedding_length
+        model.head_count = model.head_count_override if model.head_count_override is not None else head_count
+        model.layer_count = model.layer_count_override if model.layer_count_override is not None else layer_count
+        model.feed_forward_length = model.feed_forward_length_override if model.feed_forward_length_override is not None else feed_forward_length
+        model.parent_model = model.parent_model_override if model.parent_model_override is not None else parent_model
+        model.family = model.family_override if model.family_override is not None else model.family
+        model.parameter_count = model.parameter_count_override if model.parameter_count_override is not None else model.parameter_count
     else:
         model = Model(
             backend_id=backend_id,
@@ -961,6 +963,44 @@ async def set_multimodal_override_by_name(
         m.multimodal_override = value
         if value is not None:
             m.supports_multimodal = value
+    await db.flush()
+    return len(models)
+
+
+async def update_model_overrides_by_name(
+    db: AsyncSession, model_name: str, overrides: dict
+) -> int:
+    """Set metadata overrides for ALL model rows with the given name.
+
+    Accepts a dict mapping override field names to values.
+    A value of None clears the override (back to auto-detect).
+    Also applies the effective value to the base field when setting an override.
+    """
+    # Map override field -> base field
+    override_to_base = {
+        "context_length_override": "context_length",
+        "embedding_length_override": "embedding_length",
+        "head_count_override": "head_count",
+        "layer_count_override": "layer_count",
+        "feed_forward_length_override": "feed_forward_length",
+        "capabilities_override": "capabilities",
+        "family_override": "family",
+        "parameter_count_override": "parameter_count",
+        "quantization_override": "quantization",
+        "model_format_override": "model_format",
+        "parent_model_override": "parent_model",
+    }
+
+    result = await db.execute(select(Model).where(Model.name == model_name))
+    models = list(result.scalars().all())
+    for m in models:
+        for field, value in overrides.items():
+            if hasattr(m, field):
+                setattr(m, field, value)
+                # Also set the base field so the display value updates immediately
+                base_field = override_to_base.get(field)
+                if base_field and value is not None:
+                    setattr(m, base_field, value)
     await db.flush()
     return len(models)
 

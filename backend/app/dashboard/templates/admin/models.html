@@ -16,6 +16,8 @@
                 <i class="bi bi-check-circle"></i>
                 {% if success == 'updated' %}Multimodal setting updated.
                 {% elif success == 'reset' %}Multimodal override reset to auto-detect.
+                {% elif success == 'metadata_updated' %}Model metadata overrides saved.
+                {% elif success == 'overrides_reset' %}All metadata overrides cleared.
                 {% else %}Operation completed successfully.{% endif %}
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
@@ -85,22 +87,22 @@
                                     <h6>Model Details</h6>
                                     <dl class="row small mb-0">
                                         <dt class="col-5">Family:</dt>
-                                        <dd class="col-7">{{ first.family or 'Unknown' }}</dd>
+                                        <dd class="col-7">{{ first.family or 'Unknown' }}{% if first.family_override is not none %} <span class="badge bg-info" style="font-size:0.6rem">override</span>{% endif %}</dd>
                                         <dt class="col-5">Context Length:</dt>
-                                        <dd class="col-7">{{ '{:,}'.format(first.context_length) if first.context_length else 'Unknown' }}</dd>
+                                        <dd class="col-7">{{ '{:,}'.format(first.context_length) if first.context_length else 'Unknown' }}{% if first.context_length_override is not none %} <span class="badge bg-info" style="font-size:0.6rem">override</span>{% endif %}</dd>
                                         <dt class="col-5">Parameters:</dt>
-                                        <dd class="col-7">{{ first.parameter_count or 'Unknown' }}</dd>
+                                        <dd class="col-7">{{ first.parameter_count or 'Unknown' }}{% if first.parameter_count_override is not none %} <span class="badge bg-info" style="font-size:0.6rem">override</span>{% endif %}</dd>
                                         <dt class="col-5">Quantization:</dt>
-                                        <dd class="col-7">{{ first.quantization or 'N/A' }}</dd>
+                                        <dd class="col-7">{{ first.quantization or 'N/A' }}{% if first.quantization_override is not none %} <span class="badge bg-info" style="font-size:0.6rem">override</span>{% endif %}</dd>
                                         <dt class="col-5">Modality:</dt>
                                         <dd class="col-7">{{ first.modality.value }}</dd>
                                         {% if first.model_format %}
                                         <dt class="col-5">Format:</dt>
-                                        <dd class="col-7">{{ first.model_format }}</dd>
+                                        <dd class="col-7">{{ first.model_format }}{% if first.model_format_override is not none %} <span class="badge bg-info" style="font-size:0.6rem">override</span>{% endif %}</dd>
                                         {% endif %}
                                         {% if first.parent_model %}
                                         <dt class="col-5">Parent Model:</dt>
-                                        <dd class="col-7"><small>{{ first.parent_model }}</small></dd>
+                                        <dd class="col-7"><small>{{ first.parent_model }}</small>{% if first.parent_model_override is not none %} <span class="badge bg-info" style="font-size:0.6rem">override</span>{% endif %}</dd>
                                         {% endif %}
                                     </dl>
                                 </div>
@@ -148,28 +150,139 @@
                                 </div>
                             </div>
 
-                            <!-- Architecture Details (Ollama only) -->
+                            <!-- Architecture Details -->
                             {% if first.embedding_length or first.head_count or first.layer_count or first.feed_forward_length %}
                             <div class="row mb-3">
                                 <div class="col-12">
                                     <h6>Architecture</h6>
                                     <div class="d-flex flex-wrap gap-3 small">
                                         {% if first.embedding_length %}
-                                        <div><strong>Embedding Dim:</strong> {{ '{:,}'.format(first.embedding_length) }}</div>
+                                        <div><strong>Embedding Dim:</strong> {{ '{:,}'.format(first.embedding_length) }}{% if first.embedding_length_override is not none %} <span class="badge bg-info" style="font-size:0.6rem">override</span>{% endif %}</div>
                                         {% endif %}
                                         {% if first.head_count %}
-                                        <div><strong>Attention Heads:</strong> {{ first.head_count }}</div>
+                                        <div><strong>Attention Heads:</strong> {{ first.head_count }}{% if first.head_count_override is not none %} <span class="badge bg-info" style="font-size:0.6rem">override</span>{% endif %}</div>
                                         {% endif %}
                                         {% if first.layer_count %}
-                                        <div><strong>Layers:</strong> {{ first.layer_count }}</div>
+                                        <div><strong>Layers:</strong> {{ first.layer_count }}{% if first.layer_count_override is not none %} <span class="badge bg-info" style="font-size:0.6rem">override</span>{% endif %}</div>
                                         {% endif %}
                                         {% if first.feed_forward_length %}
-                                        <div><strong>FFN Size:</strong> {{ '{:,}'.format(first.feed_forward_length) }}</div>
+                                        <div><strong>FFN Size:</strong> {{ '{:,}'.format(first.feed_forward_length) }}{% if first.feed_forward_length_override is not none %} <span class="badge bg-info" style="font-size:0.6rem">override</span>{% endif %}</div>
                                         {% endif %}
                                     </div>
                                 </div>
                             </div>
                             {% endif %}
+
+                            <!-- Edit Metadata -->
+                            {% set has_any_override = first.context_length_override is not none or first.embedding_length_override is not none or first.head_count_override is not none or first.layer_count_override is not none or first.feed_forward_length_override is not none or first.capabilities_override is not none or first.family_override is not none or first.parameter_count_override is not none or first.quantization_override is not none or first.model_format_override is not none or first.parent_model_override is not none %}
+                            <div class="mb-3">
+                                <button class="btn btn-sm btn-outline-primary" type="button"
+                                        data-bs-toggle="collapse" data-bs-target="#editMeta-{{ loop.index }}">
+                                    <i class="bi bi-pencil-square"></i> Edit Metadata
+                                    {% if has_any_override %}<span class="badge bg-info ms-1">overrides active</span>{% endif %}
+                                </button>
+                            </div>
+                            <div class="collapse mb-3" id="editMeta-{{ loop.index }}">
+                                <div class="card">
+                                    <div class="card-body">
+                                        <form method="POST" action="/admin/models/update-metadata">
+                                            <input type="hidden" name="model_name" value="{{ model_name }}">
+                                            <div class="row g-2">
+                                                <div class="col-md-3">
+                                                    <label class="form-label small">Family</label>
+                                                    <input type="text" class="form-control form-control-sm{% if first.family_override is not none %} border-info{% endif %}"
+                                                           name="family" value="{{ first.family_override if first.family_override is not none else (first.family or '') }}"
+                                                           placeholder="e.g. llama, qwen">
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label class="form-label small">Parameter Count</label>
+                                                    <input type="text" class="form-control form-control-sm{% if first.parameter_count_override is not none %} border-info{% endif %}"
+                                                           name="parameter_count" value="{{ first.parameter_count_override if first.parameter_count_override is not none else (first.parameter_count or '') }}"
+                                                           placeholder="e.g. 70B">
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label class="form-label small">Quantization</label>
+                                                    <input type="text" class="form-control form-control-sm{% if first.quantization_override is not none %} border-info{% endif %}"
+                                                           name="quantization" value="{{ first.quantization_override if first.quantization_override is not none else (first.quantization or '') }}"
+                                                           placeholder="e.g. FP8, Q4_K_M">
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label class="form-label small">Context Length</label>
+                                                    <input type="number" class="form-control form-control-sm{% if first.context_length_override is not none %} border-info{% endif %}"
+                                                           name="context_length" value="{{ first.context_length_override if first.context_length_override is not none else (first.context_length or '') }}"
+                                                           placeholder="e.g. 131072">
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label class="form-label small">Embedding Dim</label>
+                                                    <input type="number" class="form-control form-control-sm{% if first.embedding_length_override is not none %} border-info{% endif %}"
+                                                           name="embedding_length" value="{{ first.embedding_length_override if first.embedding_length_override is not none else (first.embedding_length or '') }}"
+                                                           placeholder="e.g. 8192">
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label class="form-label small">Attention Heads</label>
+                                                    <input type="number" class="form-control form-control-sm{% if first.head_count_override is not none %} border-info{% endif %}"
+                                                           name="head_count" value="{{ first.head_count_override if first.head_count_override is not none else (first.head_count or '') }}"
+                                                           placeholder="e.g. 64">
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label class="form-label small">Layers</label>
+                                                    <input type="number" class="form-control form-control-sm{% if first.layer_count_override is not none %} border-info{% endif %}"
+                                                           name="layer_count" value="{{ first.layer_count_override if first.layer_count_override is not none else (first.layer_count or '') }}"
+                                                           placeholder="e.g. 80">
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label class="form-label small">FFN Size</label>
+                                                    <input type="number" class="form-control form-control-sm{% if first.feed_forward_length_override is not none %} border-info{% endif %}"
+                                                           name="feed_forward_length" value="{{ first.feed_forward_length_override if first.feed_forward_length_override is not none else (first.feed_forward_length or '') }}"
+                                                           placeholder="e.g. 28672">
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label class="form-label small">Format</label>
+                                                    <input type="text" class="form-control form-control-sm{% if first.model_format_override is not none %} border-info{% endif %}"
+                                                           name="model_format" value="{{ first.model_format_override if first.model_format_override is not none else (first.model_format or '') }}"
+                                                           placeholder="e.g. gguf, safetensors">
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label class="form-label small">Parent Model</label>
+                                                    <input type="text" class="form-control form-control-sm{% if first.parent_model_override is not none %} border-info{% endif %}"
+                                                           name="parent_model" value="{{ first.parent_model_override if first.parent_model_override is not none else (first.parent_model or '') }}"
+                                                           placeholder="e.g. meta-llama/...">
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label small">Capabilities <span class="text-muted">(comma-separated)</span></label>
+                                                    {% set cap_display = '' %}
+                                                    {% if first.capabilities_override is not none %}
+                                                        {% set cap_list = first.capabilities_override | fromjson if first.capabilities_override is string else [] %}
+                                                        {% set cap_display = cap_list | join(', ') %}
+                                                    {% elif first.capabilities %}
+                                                        {% set cap_list = first.capabilities | fromjson if first.capabilities is string else [] %}
+                                                        {% set cap_display = cap_list | join(', ') %}
+                                                    {% endif %}
+                                                    <input type="text" class="form-control form-control-sm{% if first.capabilities_override is not none %} border-info{% endif %}"
+                                                           name="capabilities" value="{{ cap_display }}"
+                                                           placeholder="e.g. completion, vision, tools">
+                                                </div>
+                                            </div>
+                                            <div class="mt-3 d-flex gap-2">
+                                                <button type="submit" class="btn btn-sm btn-primary">
+                                                    <i class="bi bi-save"></i> Save Overrides
+                                                </button>
+                                                {% if has_any_override %}
+                                                <button type="button" class="btn btn-sm btn-outline-warning"
+                                                        onclick="document.getElementById('resetOverridesForm-{{ loop.index }}').submit()">
+                                                    <i class="bi bi-arrow-counterclockwise"></i> Reset All Overrides
+                                                </button>
+                                                {% endif %}
+                                            </div>
+                                        </form>
+                                        {% if has_any_override %}
+                                        <form id="resetOverridesForm-{{ loop.index }}" method="POST" action="/admin/models/reset-overrides" style="display:none">
+                                            <input type="hidden" name="model_name" value="{{ model_name }}">
+                                        </form>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
 
                             <!-- Endpoints Table -->
                             <h6>Deployed Endpoints</h6>

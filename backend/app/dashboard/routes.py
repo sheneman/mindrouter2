@@ -600,6 +600,109 @@ async def reset_model_multimodal(
     )
 
 
+@dashboard_router.post("/admin/models/update-metadata")
+async def update_model_metadata(
+    request: Request,
+    model_name: str = Form(...),
+    family: Optional[str] = Form(None),
+    parameter_count: Optional[str] = Form(None),
+    quantization: Optional[str] = Form(None),
+    context_length: Optional[str] = Form(None),
+    embedding_length: Optional[str] = Form(None),
+    head_count: Optional[str] = Form(None),
+    layer_count: Optional[str] = Form(None),
+    feed_forward_length: Optional[str] = Form(None),
+    model_format: Optional[str] = Form(None),
+    parent_model: Optional[str] = Form(None),
+    capabilities: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Update metadata overrides for all instances of a model."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or (not user.group or not user.group.is_admin):
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    def _str_or_none(val: Optional[str]) -> Optional[str]:
+        return val.strip() if val and val.strip() else None
+
+    def _int_or_none(val: Optional[str]) -> Optional[int]:
+        if val and val.strip():
+            try:
+                return int(val.strip())
+            except ValueError:
+                return None
+        return None
+
+    # Build overrides dict — empty string means clear the override (None)
+    overrides = {
+        "family_override": _str_or_none(family),
+        "parameter_count_override": _str_or_none(parameter_count),
+        "quantization_override": _str_or_none(quantization),
+        "context_length_override": _int_or_none(context_length),
+        "embedding_length_override": _int_or_none(embedding_length),
+        "head_count_override": _int_or_none(head_count),
+        "layer_count_override": _int_or_none(layer_count),
+        "feed_forward_length_override": _int_or_none(feed_forward_length),
+        "model_format_override": _str_or_none(model_format),
+        "parent_model_override": _str_or_none(parent_model),
+    }
+
+    # Capabilities: comma-separated -> JSON array, or None to clear
+    cap_str = _str_or_none(capabilities)
+    if cap_str:
+        cap_list = [c.strip() for c in cap_str.split(",") if c.strip()]
+        overrides["capabilities_override"] = json.dumps(cap_list)
+    else:
+        overrides["capabilities_override"] = None
+
+    await crud.update_model_overrides_by_name(db, model_name, overrides)
+    await db.commit()
+
+    return RedirectResponse(
+        url="/admin/models?success=metadata_updated", status_code=302
+    )
+
+
+@dashboard_router.post("/admin/models/reset-overrides")
+async def reset_model_overrides(
+    request: Request,
+    model_name: str = Form(...),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Reset all metadata overrides for all instances of a model."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or (not user.group or not user.group.is_admin):
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    overrides = {
+        "family_override": None,
+        "parameter_count_override": None,
+        "quantization_override": None,
+        "context_length_override": None,
+        "embedding_length_override": None,
+        "head_count_override": None,
+        "layer_count_override": None,
+        "feed_forward_length_override": None,
+        "model_format_override": None,
+        "parent_model_override": None,
+        "capabilities_override": None,
+    }
+    await crud.update_model_overrides_by_name(db, model_name, overrides)
+    await db.commit()
+
+    return RedirectResponse(
+        url="/admin/models?success=overrides_reset", status_code=302
+    )
+
+
 @dashboard_router.get("/admin/nodes", response_class=HTMLResponse)
 async def admin_nodes(
     request: Request,
