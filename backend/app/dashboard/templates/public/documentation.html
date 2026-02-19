@@ -1348,7 +1348,12 @@ Anthropic Request --&gt; AnthropicInTranslator --&gt; CanonicalChatRequest
 
                 <h3>GPU Sidecar Deployment</h3>
                 <p>The GPU sidecar agent runs on each inference node to expose per-GPU hardware metrics and enable auto-discovery of inference endpoints.
-                   Build and deploy directly from GitHub — no need to clone the repository:</p>
+                   Build and deploy directly from GitHub — no need to clone the repository.</p>
+
+                <h4>Create the env file (once per node)</h4>
+<pre><code>sudo mkdir -p /etc/mindrouter
+python3 -c "import secrets; print('SIDECAR_SECRET_KEY=' + secrets.token_hex(32))" | sudo tee /etc/mindrouter/sidecar.env
+sudo chmod 600 /etc/mindrouter/sidecar.env</code></pre>
 
                 <h4>Build a specific version</h4>
 <pre><code>docker build -t mindrouter-sidecar:v0.11.0 \
@@ -1364,7 +1369,7 @@ Anthropic Request --&gt; AnthropicInTranslator --&gt; CanonicalChatRequest
 <pre><code>docker run -d --name gpu-sidecar \
   --gpus all \
   -p 127.0.0.1:18007:8007 \
-  -e SIDECAR_SECRET_KEY=your-generated-key \
+  --env-file /etc/mindrouter/sidecar.env \
   --restart unless-stopped \
   mindrouter-sidecar:v0.11.0</code></pre>
 
@@ -1376,12 +1381,12 @@ docker stop gpu-sidecar && docker rm gpu-sidecar
 docker run -d --name gpu-sidecar \
   --gpus all \
   -p 127.0.0.1:18007:8007 \
-  -e SIDECAR_SECRET_KEY=your-generated-key \
+  --env-file /etc/mindrouter/sidecar.env \
   --restart unless-stopped \
   mindrouter-sidecar:v0.11.0</code></pre>
 
                 <p>In production, bind the sidecar to localhost only (as shown above) and use an nginx reverse proxy on port 8007 to handle external traffic.
-                   Generate a unique <code>SIDECAR_SECRET_KEY</code> per node with: <code>python3 -c "import secrets; print(secrets.token_hex(32))"</code></p>
+                   The env file at <code>/etc/mindrouter/sidecar.env</code> persists the secret key across upgrades — generate it once per node and it's reused automatically.</p>
             </section>
 
             <hr>

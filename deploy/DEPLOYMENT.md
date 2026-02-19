@@ -173,11 +173,21 @@ The sidecar requires a `SIDECAR_SECRET_KEY` for authentication. Generate one per
 python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-Build and deploy the sidecar directly from GitHub on each GPU server. In production, bind the container to localhost only and use nginx as a reverse proxy:
+Build and deploy the sidecar directly from GitHub on each GPU server. In production, bind the container to localhost only and use nginx as a reverse proxy.
+
+Create the sidecar configuration directory and env file (once per node):
 
 ```bash
 ssh user@gpu-server
 
+sudo mkdir -p /etc/mindrouter
+python3 -c "import secrets; print('SIDECAR_SECRET_KEY=' + secrets.token_hex(32))" | sudo tee /etc/mindrouter/sidecar.env
+sudo chmod 600 /etc/mindrouter/sidecar.env
+```
+
+Build and run:
+
+```bash
 # Build a specific release tag directly from GitHub (no clone needed)
 docker build -t mindrouter-sidecar:v0.11.0 \
   -f Dockerfile.sidecar \
@@ -192,7 +202,7 @@ docker build -t mindrouter-sidecar:latest \
 docker run -d --name gpu-sidecar \
   --gpus all \
   -p 127.0.0.1:18007:8007 \
-  -e SIDECAR_SECRET_KEY=your-generated-key \
+  --env-file /etc/mindrouter/sidecar.env \
   --restart unless-stopped \
   mindrouter-sidecar:v0.11.0
 ```
@@ -207,7 +217,7 @@ docker stop gpu-sidecar && docker rm gpu-sidecar
 docker run -d --name gpu-sidecar \
   --gpus all \
   -p 127.0.0.1:18007:8007 \
-  -e SIDECAR_SECRET_KEY=your-generated-key \
+  --env-file /etc/mindrouter/sidecar.env \
   --restart unless-stopped \
   mindrouter-sidecar:v0.11.0
 ```

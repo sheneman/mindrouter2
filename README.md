@@ -422,7 +422,17 @@ docker compose --profile gpu up gpu-sidecar
 
 **Option B: Build directly from GitHub (production — run on each GPU node)**
 
-Build and deploy a specific version directly from the repository without cloning:
+Build and deploy a specific version directly from the repository without cloning.
+
+First, create the sidecar configuration directory and env file (once per node):
+
+```bash
+sudo mkdir -p /etc/mindrouter
+python3 -c "import secrets; print('SIDECAR_SECRET_KEY=' + secrets.token_hex(32))" | sudo tee /etc/mindrouter/sidecar.env
+sudo chmod 600 /etc/mindrouter/sidecar.env
+```
+
+Then build and run:
 
 ```bash
 # Build a specific release tag
@@ -439,7 +449,7 @@ docker build -t mindrouter-sidecar:latest \
 docker run -d --name gpu-sidecar \
   --gpus all \
   -p 127.0.0.1:18007:8007 \
-  -e SIDECAR_SECRET_KEY=your-generated-key \
+  --env-file /etc/mindrouter/sidecar.env \
   --restart unless-stopped \
   mindrouter-sidecar:v0.11.0
 ```
@@ -454,7 +464,7 @@ docker stop gpu-sidecar && docker rm gpu-sidecar
 docker run -d --name gpu-sidecar \
   --gpus all \
   -p 127.0.0.1:18007:8007 \
-  -e SIDECAR_SECRET_KEY=your-generated-key \
+  --env-file /etc/mindrouter/sidecar.env \
   --restart unless-stopped \
   mindrouter-sidecar:v0.11.0
 ```
