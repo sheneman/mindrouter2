@@ -799,7 +799,7 @@ async def chat_completions(
             "model": model,
             "messages": api_messages,
             "stream": stream,
-            "max_tokens": 8192,
+            "max_tokens": 16384,
         }
         # Pass thinking parameters if provided
         think = body.get("think")
