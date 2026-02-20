@@ -902,23 +902,38 @@
     }
 
     // -----------------------------------------------------------------------
-    // Phase 3: Merge adjacent $…$ blocks that form a single expression
+    // Phase 3a: Extend $\func$(args) → $\func(args)$
+    // Models often wrap just the function name in $ but leave args outside
+    // -----------------------------------------------------------------------
+    function extendFuncArgs(text) {
+        // Match $...\func$ followed by (args) — handles one level of nested parens
+        const RE = /\$([^$]*\\(?:sin|cos|tan|sec|csc|cot|sinh|cosh|tanh|arcsin|arccos|arctan|log|ln|exp|det|gcd|deg|dim|ker|arg|hom|Pr|max|min|sup|inf|lim)\b[^$]*)\$\s*(\([^()]*(?:\([^()]*\)[^()]*)*\))/g;
+        return text.replace(RE, function(_match, inner, args) {
+            return '$' + inner + args + '$';
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 3b: Merge adjacent $…$ blocks that form a single expression
     // e.g. $\lim_{x \to 0}$ $\frac{a}{b}$ → $\lim_{x \to 0} \frac{a}{b}$
     // e.g. $\frac{a}{b}$ + $\frac{c}{d}$ → $\frac{a}{b} + \frac{c}{d}$
+    // e.g. $\leq$ 1 $\implies$ → $\leq 1 \implies$
     // -----------------------------------------------------------------------
     function mergeAdjacentMath(text) {
-        // Connectors: whitespace only, or whitespace around a math operator
-        const RE = /\$([^$]+)\$(\s*[+\-=<>≤≥≈,]\s*|\s+)\$([^$]+)\$/g;
+        // Allow gaps up to 25 chars on the same line between $…$ blocks
+        const RE = /\$([^$]+)\$([^\n$]{1,25}?)\$([^$]+)\$/g;
         let prev;
         do {
             prev = text;
-            text = text.replace(RE, function(_match, a, connector, b) {
-                // Safety: only merge if at least one side contains a LaTeX command
-                if (a.includes('\\') || b.includes('\\')) {
-                    const sep = connector.trim();
-                    return '$' + a + (sep ? ' ' + sep + ' ' : ' ') + b + '$';
-                }
-                return _match;
+            text = text.replace(RE, function(_match, a, gap, b) {
+                // At least one side must contain a LaTeX command
+                if (!(a.includes('\\') || b.includes('\\'))) return _match;
+                // Don't merge across sentence boundaries
+                if (/[.!?]/.test(gap)) return _match;
+                // Don't merge across prose (words of 3+ letters)
+                if (/[a-zA-Z]{3,}/.test(gap)) return _match;
+                const sep = gap.trim();
+                return '$' + a + (sep ? ' ' + sep + ' ' : ' ') + b + '$';
             });
         } while (text !== prev);
         return text;
@@ -941,7 +956,9 @@
         text = wrapBareLatex(text);
         // Phase 2: wrap bare \operators and \symbols (lim, sum, sin, alpha, etc.)
         text = wrapBareOperators(text);
-        // Phase 3: merge adjacent $…$ blocks into single expressions
+        // Phase 3a: extend $\func$(args) → $\func(args)$
+        text = extendFuncArgs(text);
+        // Phase 3b: merge adjacent $…$ blocks into single expressions
         text = mergeAdjacentMath(text);
 
         // Wrap bare \begin{env}…\end{env} blocks in $$…$$ (not already inside $)
