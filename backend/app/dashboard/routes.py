@@ -242,6 +242,8 @@ async def logout():
 @dashboard_router.get("/dashboard", response_class=HTMLResponse)
 async def user_dashboard(
     request: Request,
+    pw_error: Optional[str] = None,
+    pw_success: Optional[str] = None,
     db: AsyncSession = Depends(get_async_db),
 ):
     """User dashboard."""
@@ -272,8 +274,45 @@ async def user_dashboard(
             "api_keys": api_keys,
             "quota": quota,
             "usage_percent": usage_percent,
+            "pw_error": pw_error,
+            "pw_success": pw_success,
         },
     )
+
+
+@dashboard_router.post("/dashboard/change-password")
+async def change_password(
+    request: Request,
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Change password for local (non-SSO) accounts."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or not user.password_hash:
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    # Validate current password
+    if not verify_password(current_password, user.password_hash):
+        return RedirectResponse(url="/dashboard?pw_error=Current+password+is+incorrect", status_code=302)
+
+    # Validate new password
+    if len(new_password) < 8:
+        return RedirectResponse(url="/dashboard?pw_error=New+password+must+be+at+least+8+characters", status_code=302)
+
+    if new_password != confirm_password:
+        return RedirectResponse(url="/dashboard?pw_error=Passwords+do+not+match", status_code=302)
+
+    # Update password
+    user.password_hash = hash_password(new_password)
+    await db.commit()
+
+    return RedirectResponse(url="/dashboard?pw_success=Password+changed+successfully", status_code=302)
 
 
 @dashboard_router.post("/dashboard/create-key")
