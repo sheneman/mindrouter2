@@ -219,7 +219,7 @@ class VLLMOutTranslator:
             message = CanonicalMessage(
                 role=MessageRole(message_data.get("role", "assistant")),
                 content=message_data.get("content"),
-                reasoning=message_data.get("reasoning_content"),
+                reasoning=message_data.get("reasoning_content") or message_data.get("reasoning"),
                 tool_calls=tool_calls,
             )
             choices.append(
@@ -317,7 +317,7 @@ class VLLMOutTranslator:
                                         else None
                                     ),
                                     content=delta_data.get("content"),
-                                    reasoning=delta_data.get("reasoning_content"),
+                                    reasoning=delta_data.get("reasoning_content") or delta_data.get("reasoning"),
                                     tool_calls=tc_deltas,
                                 )
                                 choices.append(
