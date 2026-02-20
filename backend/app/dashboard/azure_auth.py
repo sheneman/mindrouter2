@@ -14,10 +14,14 @@
 
 """Azure AD OAuth2 SSO authentication for MindRouter2."""
 
+import json
+import logging
 import secrets
 from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import urlencode
+
+logger = logging.getLogger(__name__)
 
 import httpx
 from fastapi import APIRouter, Depends, Request
@@ -181,6 +185,9 @@ async def azure_callback(
             )
 
         profile = graph_response.json()
+
+    # Log full Azure AD profile for debugging field availability
+    logger.info("Azure AD profile for %s: %s", profile.get("mail") or profile.get("userPrincipalName"), json.dumps(profile, indent=2, default=str))
 
     # JIT provision or update user
     user = await find_or_create_azure_user(db, profile)
