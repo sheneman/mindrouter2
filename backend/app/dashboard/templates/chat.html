@@ -859,10 +859,25 @@
         }
         // First, wrap bare LaTeX commands in $...$ so KaTeX can render them
         text = wrapBareLatex(text);
+        // Wrap bare \begin{env}...\end{env} blocks in $$...$$ (not already inside $)
+        text = text.replace(/(\\begin\{([a-zA-Z*]+)\}[\s\S]*?\\end\{\2\})/g, function(match, body, env, offset) {
+            // Check if already inside $ delimiters
+            const before = text.slice(0, offset);
+            const dollarCount = (before.match(/(?<!\\)\$/g) || []).length;
+            if (dollarCount % 2 === 1) return match; // inside $...$, leave alone
+            // Check if preceded by $ or $$
+            const trimBefore = before.trimEnd();
+            if (trimBefore.endsWith('$')) return match; // already delimited
+            return '$$' + match + '$$';
+        });
         // Protect delimited math blocks from markdown mangling
         text = text.replace(/\$\$([\s\S]+?)\$\$/g, placeholder);
         text = text.replace(/\\\[([\s\S]+?)\\\]/g, placeholder);
         text = text.replace(/\\\(([\s\S]+?)\\\)/g, placeholder);
+        // Multiline $...$ containing LaTeX environments (e.g. $\boxed{\begin{aligned}...\end{aligned}}$)
+        text = text.replace(/(?<![\\$])\$([\s\S]*?\\begin\{[a-zA-Z*]+\}[\s\S]*?\\end\{[a-zA-Z*]+\}[\s\S]*?)\$(?!\$)/g,
+            function(match) { return placeholder(match); });
+        // Single-line inline $...$
         text = text.replace(/(?<![\\$])\$(?!\$)(.+?)(?<![\\$])\$(?!\$)/g, placeholder);
         return text;
     }
