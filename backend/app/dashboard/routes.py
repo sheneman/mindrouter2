@@ -443,8 +443,32 @@ async def admin_dashboard(
             "backends": backends,
             "pending_requests": pending_requests,
             "scheduler_stats": scheduler_stats,
+            "is_force_offline": registry.is_force_offline,
         },
     )
+
+
+@dashboard_router.post("/admin/system/toggle-online")
+async def admin_toggle_system_online(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Toggle MindRouter system online/offline."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or (not user.group or not user.group.is_admin):
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    registry = get_registry()
+    if registry.is_force_offline:
+        await registry.force_online()
+    else:
+        await registry.force_offline()
+
+    return RedirectResponse(url="/admin", status_code=303)
 
 
 @dashboard_router.get("/admin/users", response_class=HTMLResponse)

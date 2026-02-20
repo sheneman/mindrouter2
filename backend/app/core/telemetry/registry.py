@@ -61,6 +61,7 @@ class BackendRegistry:
         self._poll_task: Optional[asyncio.Task] = None
         self._persist_task: Optional[asyncio.Task] = None
         self._cleanup_task: Optional[asyncio.Task] = None
+        self._force_offline: bool = False
 
         # Sidecar clients keyed by node_id (one per physical server)
         self._sidecar_clients: Dict[int, SidecarClient] = {}
@@ -148,6 +149,61 @@ class BackendRegistry:
             await client.close()
 
         logger.info("Backend registry stopped")
+
+    @property
+    def is_force_offline(self) -> bool:
+        """Whether the system is forced offline by admin."""
+        return self._force_offline
+
+    async def force_offline(self) -> None:
+        """Force the system offline - stop polling and mark all backends unhealthy."""
+        self._force_offline = True
+
+        # Stop the poll loop
+        if self._poll_task:
+            self._poll_task.cancel()
+            try:
+                await self._poll_task
+            except asyncio.CancelledError:
+                pass
+            self._poll_task = None
+
+        # Mark all backends as unhealthy in DB
+        async with get_async_db_context() as db:
+            backends = await crud.get_all_backends(db=db)
+            for b in backends:
+                await crud.update_backend_status(db, b.id, BackendStatus.UNHEALTHY)
+            await db.commit()
+
+        logger.info("system_forced_offline")
+
+    async def force_online(self) -> None:
+        """Force the system back online - reload backends and restart polling."""
+        self._force_offline = False
+
+        # Close existing adapters and sidecar clients
+        for adapter in self._adapters.values():
+            await adapter.close()
+        for client in self._sidecar_clients.values():
+            await client.close()
+
+        self._adapters.clear()
+        self._sidecar_clients.clear()
+        self._node_backends.clear()
+        self._backend_gpu_indices.clear()
+        self._node_sidecar_data.clear()
+
+        # Reload from DB
+        await self._load_backends_from_db()
+
+        # Restart poll loop
+        if self._poll_task is None or self._poll_task.done():
+            self._poll_task = asyncio.create_task(self._poll_loop())
+
+        # Immediate full poll
+        await self._poll_all_backends()
+
+        logger.info("system_forced_online")
 
     async def register_backend(
         self,
@@ -315,7 +371,9 @@ class BackendRegistry:
         self,
         engine: Optional[BackendEngine] = None,
     ) -> List[Backend]:
-        """Get all healthy backends."""
+        """Get all healthy backends. Returns empty list if system is forced offline."""
+        if self._force_offline:
+            return []
         async with get_async_db_context() as db:
             return await crud.get_healthy_backends(db=db, engine=engine)
 
