@@ -107,40 +107,363 @@
             </div>
         </div>
         <div class="col-md-4">
-            <div class="card">
-                <div class="card-header">
-                    <i class="bi bi-lightning"></i> Quick Start
+            <div class="card border-0 shadow-sm" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                <div class="card-header border-0" style="background:transparent; color:#fff;">
+                    <i class="bi bi-lightning-charge-fill"></i> <strong>Quick Start</strong>
                 </div>
-                <div class="card-body">
-                    <p>To use the MindRouter2 API:</p>
-                    <ol class="mb-0">
-                        <li><a href="/request-api-key">Request an API key</a></li>
-                        <li>Wait for admin approval</li>
-                        <li>Use the OpenAI-compatible API</li>
-                    </ol>
+                <div class="card-body text-white">
+                    <div class="d-flex align-items-start mb-3">
+                        <span class="badge rounded-circle bg-white text-dark me-2 d-flex align-items-center justify-content-center" style="width:28px; height:28px; flex-shrink:0; font-weight:700;">1</span>
+                        <div>
+                            <strong>Login to MindRouter</strong>
+                            <div class="mt-1"><a href="/login" class="btn btn-sm btn-light"><i class="bi bi-box-arrow-in-right"></i> Login</a></div>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-start mb-3">
+                        <span class="badge rounded-circle bg-white text-dark me-2 d-flex align-items-center justify-content-center" style="width:28px; height:28px; flex-shrink:0; font-weight:700;">2</span>
+                        <div>
+                            <strong>Create an API Key</strong>
+                            <div class="small" style="opacity:0.85;">Generate keys in your Dashboard</div>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-start mb-3">
+                        <span class="badge rounded-circle bg-white text-dark me-2 d-flex align-items-center justify-content-center" style="width:28px; height:28px; flex-shrink:0; font-weight:700;">3</span>
+                        <div>
+                            <strong>Use the Chat Interface</strong>
+                            <div class="small" style="opacity:0.85;">Talk to models directly in your browser</div>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-start mb-3">
+                        <span class="badge rounded-circle bg-white text-dark me-2 d-flex align-items-center justify-content-center" style="width:28px; height:28px; flex-shrink:0; font-weight:700;">4</span>
+                        <div>
+                            <strong>Read the Docs &amp; Blog</strong>
+                            <div class="small" style="opacity:0.85;">Guides, examples, and updates</div>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-start">
+                        <span class="badge rounded-circle bg-white text-dark me-2 d-flex align-items-center justify-content-center" style="width:28px; height:28px; flex-shrink:0; font-weight:700;">5</span>
+                        <div>
+                            <strong>Integrate into Your Code</strong>
+                            <div class="small" style="opacity:0.85;">OpenAI-compatible API, drop-in replacement</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ====================================================================== -->
+<!-- Features & Capabilities Showcase                                       -->
+<!-- ====================================================================== -->
+<div style="background: linear-gradient(180deg, #f8f9fa 0%, #ffffff 50%, #f8f9fa 100%);">
+<div class="container py-5">
+
+    <!-- Section Header -->
+    <div class="text-center mb-5">
+        <h2 class="fw-bold" style="font-size:2.2rem;">Everything You Need for LLM Inference</h2>
+        <p class="text-muted mx-auto" style="max-width:640px;">MindRouter2 provides a complete platform for running, managing, and integrating large language models &mdash; from a browser-based chat to a full OpenAI-compatible API.</p>
+    </div>
+
+    <!-- ── Feature 1: API Usage ── -->
+    <div class="row align-items-center mb-5 g-4">
+        <div class="col-lg-6">
+            <span class="badge bg-primary bg-opacity-10 text-primary mb-2 px-3 py-2" style="font-size:0.8rem;"><i class="bi bi-braces"></i> OpenAI-Compatible API</span>
+            <h3 class="fw-bold mt-2">Drop-in API Replacement</h3>
+            <p class="text-muted">Point any OpenAI SDK or tool at MindRouter and start generating. Supports chat completions, streaming, tool calling, structured output, and embeddings &mdash; all through a single endpoint.</p>
+            <ul class="list-unstyled text-muted">
+                <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>Full <code>/v1/chat/completions</code> compatibility</li>
+                <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>Streaming &amp; non-streaming responses</li>
+                <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>Tool calling &amp; function calling</li>
+                <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>Structured JSON output</li>
+                <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>Image &amp; multimodal inputs</li>
+            </ul>
+        </div>
+        <div class="col-lg-6">
+            <div class="rounded-3 shadow-lg overflow-hidden" style="background:#1e1e2e; border:1px solid #313244;">
+                <!-- Terminal title bar -->
+                <div class="d-flex align-items-center px-3 py-2" style="background:#181825; border-bottom:1px solid #313244;">
+                    <span style="width:12px; height:12px; border-radius:50%; background:#f38ba8; display:inline-block; margin-right:6px;"></span>
+                    <span style="width:12px; height:12px; border-radius:50%; background:#a6e3a1; display:inline-block; margin-right:6px;"></span>
+                    <span style="width:12px; height:12px; border-radius:50%; background:#f9e2af; display:inline-block; margin-right:6px;"></span>
+                    <span class="ms-2" style="font-size:0.75rem; color:#6c7086;">curl &mdash; Chat Completions</span>
+                </div>
+                <pre class="mb-0 p-3" style="background:transparent; color:#cdd6f4; font-size:0.82rem; line-height:1.6; overflow-x:auto;"><code><span style="color:#89b4fa;">curl</span> -X POST {{ request.url.scheme }}://{{ request.url.netloc }}/v1/chat/completions \
+  -H <span style="color:#a6e3a1;">"Authorization: Bearer YOUR_API_KEY"</span> \
+  -H <span style="color:#a6e3a1;">"Content-Type: application/json"</span> \
+  -d <span style="color:#a6e3a1;">'{
+    "model": "openai/gpt-oss-20b",
+    "messages": [
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "Explain quantum computing in 3 sentences."}
+    ],
+    "temperature": 0.7,
+    "max_tokens": 256
+  }'</span></code></pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Feature 2: Python SDK ── -->
+    <div class="row align-items-center mb-5 g-4 flex-lg-row-reverse">
+        <div class="col-lg-6">
+            <span class="badge bg-warning bg-opacity-10 text-warning mb-2 px-3 py-2" style="font-size:0.8rem;"><i class="bi bi-filetype-py"></i> Python Integration</span>
+            <h3 class="fw-bold mt-2">Works with the OpenAI Python SDK</h3>
+            <p class="text-muted">Change two lines of code &mdash; <code>base_url</code> and <code>api_key</code> &mdash; and your existing OpenAI Python code works instantly with MindRouter. No new libraries to learn.</p>
+            <ul class="list-unstyled text-muted">
+                <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>Use <code>openai</code> Python package as-is</li>
+                <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>Async support with <code>AsyncOpenAI</code></li>
+                <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>Streaming with server-sent events</li>
+                <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>Compatible with LangChain, LlamaIndex, etc.</li>
+            </ul>
+        </div>
+        <div class="col-lg-6">
+            <div class="rounded-3 shadow-lg overflow-hidden" style="background:#1e1e2e; border:1px solid #313244;">
+                <div class="d-flex align-items-center px-3 py-2" style="background:#181825; border-bottom:1px solid #313244;">
+                    <span style="width:12px; height:12px; border-radius:50%; background:#f38ba8; display:inline-block; margin-right:6px;"></span>
+                    <span style="width:12px; height:12px; border-radius:50%; background:#a6e3a1; display:inline-block; margin-right:6px;"></span>
+                    <span style="width:12px; height:12px; border-radius:50%; background:#f9e2af; display:inline-block; margin-right:6px;"></span>
+                    <span class="ms-2" style="font-size:0.75rem; color:#6c7086;">example.py</span>
+                </div>
+                <pre class="mb-0 p-3" style="background:transparent; color:#cdd6f4; font-size:0.82rem; line-height:1.6; overflow-x:auto;"><code><span style="color:#cba6f7;">from</span> <span style="color:#89b4fa;">openai</span> <span style="color:#cba6f7;">import</span> OpenAI
+
+client = OpenAI(
+    <span style="color:#fab387;">base_url</span>=<span style="color:#a6e3a1;">"{{ request.url.scheme }}://{{ request.url.netloc }}/v1"</span>,
+    <span style="color:#fab387;">api_key</span>=<span style="color:#a6e3a1;">"YOUR_API_KEY"</span>,
+)
+
+response = client.chat.completions.create(
+    <span style="color:#fab387;">model</span>=<span style="color:#a6e3a1;">"openai/gpt-oss-20b"</span>,
+    <span style="color:#fab387;">messages</span>=[
+        {<span style="color:#a6e3a1;">"role"</span>: <span style="color:#a6e3a1;">"user"</span>,
+         <span style="color:#a6e3a1;">"content"</span>: <span style="color:#a6e3a1;">"Write a haiku about GPUs."</span>}
+    ],
+    <span style="color:#fab387;">stream</span>=<span style="color:#fab387;">True</span>,
+)
+
+<span style="color:#cba6f7;">for</span> chunk <span style="color:#cba6f7;">in</span> response:
+    <span style="color:#89b4fa;">print</span>(chunk.choices[<span style="color:#fab387;">0</span>].delta.content, <span style="color:#fab387;">end</span>=<span style="color:#a6e3a1;">""</span>)</code></pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Feature 3: Chat Interface ── -->
+    <div class="row align-items-center mb-5 g-4">
+        <div class="col-lg-6">
+            <span class="badge bg-success bg-opacity-10 text-success mb-2 px-3 py-2" style="font-size:0.8rem;"><i class="bi bi-chat-dots"></i> Built-in Chat</span>
+            <h3 class="fw-bold mt-2">Interactive Chat Interface</h3>
+            <p class="text-muted">No setup required &mdash; just log in and start chatting. MindRouter includes a full-featured web chat with markdown rendering, code highlighting, file uploads, conversation history, and model switching.</p>
+            <ul class="list-unstyled text-muted">
+                <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>Real-time streaming responses</li>
+                <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>Syntax-highlighted code blocks</li>
+                <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>File &amp; image uploads</li>
+                <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>Persistent conversation history</li>
+                <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>Switch models mid-conversation</li>
+            </ul>
+            {% if user %}
+            <a href="/chat" class="btn btn-success mt-2"><i class="bi bi-chat-dots"></i> Open Chat</a>
+            {% else %}
+            <a href="/login" class="btn btn-success mt-2"><i class="bi bi-box-arrow-in-right"></i> Login to Chat</a>
+            {% endif %}
+        </div>
+        <div class="col-lg-6">
+            <!-- Chat UI mockup -->
+            <div class="rounded-3 shadow-lg overflow-hidden" style="background:#ffffff; border:1px solid #dee2e6;">
+                <!-- Chat header -->
+                <div class="d-flex align-items-center justify-content-between px-3 py-2" style="background:#f8f9fa; border-bottom:1px solid #dee2e6;">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-chat-dots text-primary me-2"></i>
+                        <span class="fw-semibold" style="font-size:0.9rem;">MindRouter Chat</span>
+                    </div>
+                    <span class="badge bg-secondary" style="font-size:0.7rem;">openai/gpt-oss-20b</span>
+                </div>
+                <!-- Chat messages mockup -->
+                <div class="p-3" style="min-height:240px; background:#fff;">
+                    <!-- User message -->
+                    <div class="d-flex justify-content-end mb-3">
+                        <div class="rounded-3 px-3 py-2" style="background:#e7f1ff; max-width:80%; font-size:0.85rem;">
+                            Write a Python function that finds prime numbers using the Sieve of Eratosthenes.
+                        </div>
+                    </div>
+                    <!-- Assistant message -->
+                    <div class="d-flex justify-content-start mb-2">
+                        <div class="rounded-3 px-3 py-2" style="background:#f8f9fa; max-width:85%; font-size:0.85rem;">
+                            <p class="mb-2">Here's an efficient implementation:</p>
+                            <div class="rounded-2 p-2 mb-2" style="background:#1e1e2e; color:#cdd6f4; font-size:0.78rem; font-family:monospace; line-height:1.5;">
+                                <span style="color:#cba6f7;">def</span> <span style="color:#89b4fa;">sieve</span>(n):<br>
+                                &nbsp;&nbsp;&nbsp;&nbsp;is_prime = [<span style="color:#fab387;">True</span>] * (n + <span style="color:#fab387;">1</span>)<br>
+                                &nbsp;&nbsp;&nbsp;&nbsp;is_prime[<span style="color:#fab387;">0</span>] = is_prime[<span style="color:#fab387;">1</span>] = <span style="color:#fab387;">False</span><br>
+                                &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#cba6f7;">for</span> i <span style="color:#cba6f7;">in</span> <span style="color:#89b4fa;">range</span>(<span style="color:#fab387;">2</span>, <span style="color:#89b4fa;">int</span>(n**<span style="color:#fab387;">0.5</span>)+<span style="color:#fab387;">1</span>):<br>
+                                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#cba6f7;">if</span> is_prime[i]:<br>
+                                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;is_prime[i*i::i] = [<span style="color:#fab387;">False</span>] * ...<br>
+                                &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#cba6f7;">return</span> [i <span style="color:#cba6f7;">for</span> i, p <span style="color:#cba6f7;">in</span> ...]
+                            </div>
+                            <p class="mb-0 text-muted" style="font-size:0.78rem;">This runs in O(n log log n) time complexity...</p>
+                        </div>
+                    </div>
+                </div>
+                <!-- Chat input mockup -->
+                <div class="d-flex align-items-center px-3 py-2" style="border-top:1px solid #dee2e6; background:#f8f9fa;">
+                    <div class="flex-grow-1 rounded-pill px-3 py-1" style="background:#fff; border:1px solid #ced4da; font-size:0.82rem; color:#6c757d;">
+                        Type a message...
+                    </div>
+                    <button class="btn btn-primary btn-sm rounded-pill ms-2 px-3"><i class="bi bi-send"></i></button>
                 </div>
             </div>
         </div>
     </div>
 
-    <div class="row mt-4">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header">
-                    <i class="bi bi-code-slash"></i> API Usage Example
+    <!-- ── Feature 4: Tool Calling ── -->
+    <div class="row align-items-center mb-5 g-4 flex-lg-row-reverse">
+        <div class="col-lg-6">
+            <span class="badge bg-info bg-opacity-10 text-info mb-2 px-3 py-2" style="font-size:0.8rem;"><i class="bi bi-tools"></i> Tool Calling</span>
+            <h3 class="fw-bold mt-2">Native Function &amp; Tool Calling</h3>
+            <p class="text-muted">Build AI agents and agentic workflows. MindRouter supports the OpenAI tool calling protocol, enabling models to invoke functions, query databases, call APIs, and orchestrate complex multi-step tasks.</p>
+            <ul class="list-unstyled text-muted">
+                <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>OpenAI-compatible <code>tools</code> parameter</li>
+                <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>Parallel tool calls supported</li>
+                <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>Works with LangChain agents</li>
+                <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>Structured JSON Schema outputs</li>
+            </ul>
+        </div>
+        <div class="col-lg-6">
+            <div class="rounded-3 shadow-lg overflow-hidden" style="background:#1e1e2e; border:1px solid #313244;">
+                <div class="d-flex align-items-center px-3 py-2" style="background:#181825; border-bottom:1px solid #313244;">
+                    <span style="width:12px; height:12px; border-radius:50%; background:#f38ba8; display:inline-block; margin-right:6px;"></span>
+                    <span style="width:12px; height:12px; border-radius:50%; background:#a6e3a1; display:inline-block; margin-right:6px;"></span>
+                    <span style="width:12px; height:12px; border-radius:50%; background:#f9e2af; display:inline-block; margin-right:6px;"></span>
+                    <span class="ms-2" style="font-size:0.75rem; color:#6c7086;">tool_calling.py</span>
                 </div>
-                <div class="card-body">
-                    <pre class="bg-dark text-light p-3 rounded"><code>curl -X POST {{ request.url.scheme }}://{{ request.url.netloc }}/v1/chat/completions \
-  -H "Authorization: Bearer YOUR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "{% if models %}{{ models[0] }}{% else %}llama3.2{% endif %}",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'</code></pre>
+                <pre class="mb-0 p-3" style="background:transparent; color:#cdd6f4; font-size:0.82rem; line-height:1.6; overflow-x:auto;"><code>response = client.chat.completions.create(
+    <span style="color:#fab387;">model</span>=<span style="color:#a6e3a1;">"openai/gpt-oss-20b"</span>,
+    <span style="color:#fab387;">messages</span>=[{<span style="color:#a6e3a1;">"role"</span>: <span style="color:#a6e3a1;">"user"</span>,
+               <span style="color:#a6e3a1;">"content"</span>: <span style="color:#a6e3a1;">"What's the weather in Moscow, ID?"</span>}],
+    <span style="color:#fab387;">tools</span>=[{
+        <span style="color:#a6e3a1;">"type"</span>: <span style="color:#a6e3a1;">"function"</span>,
+        <span style="color:#a6e3a1;">"function"</span>: {
+            <span style="color:#a6e3a1;">"name"</span>: <span style="color:#a6e3a1;">"get_weather"</span>,
+            <span style="color:#a6e3a1;">"description"</span>: <span style="color:#a6e3a1;">"Get current weather"</span>,
+            <span style="color:#a6e3a1;">"parameters"</span>: {
+                <span style="color:#a6e3a1;">"type"</span>: <span style="color:#a6e3a1;">"object"</span>,
+                <span style="color:#a6e3a1;">"properties"</span>: {
+                    <span style="color:#a6e3a1;">"city"</span>: {<span style="color:#a6e3a1;">"type"</span>: <span style="color:#a6e3a1;">"string"</span>}
+                }
+            }
+        }
+    }],
+)</code></pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Feature 5: Docs & Blog ── -->
+    <div class="row align-items-center mb-5 g-4">
+        <div class="col-lg-6">
+            <span class="badge bg-danger bg-opacity-10 text-danger mb-2 px-3 py-2" style="font-size:0.8rem;"><i class="bi bi-book"></i> Documentation &amp; Blog</span>
+            <h3 class="fw-bold mt-2">Comprehensive Docs &amp; Blog</h3>
+            <p class="text-muted">Everything you need to get started and go deep. The documentation covers API endpoints, authentication, model capabilities, rate limits, and integration guides. The blog features updates, tutorials, and best practices.</p>
+            <div class="d-flex gap-2 mt-3">
+                <a href="/documentation" class="btn btn-outline-primary"><i class="bi bi-book"></i> Documentation</a>
+                <a href="/blog" class="btn btn-outline-dark"><i class="bi bi-pencil-square"></i> Blog</a>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <!-- Docs mockup -->
+            <div class="rounded-3 shadow-lg overflow-hidden" style="background:#ffffff; border:1px solid #dee2e6;">
+                <div class="d-flex align-items-center px-3 py-2" style="background:#f8f9fa; border-bottom:1px solid #dee2e6;">
+                    <i class="bi bi-book text-primary me-2"></i>
+                    <span class="fw-semibold" style="font-size:0.9rem;">MindRouter2 Documentation</span>
+                </div>
+                <div class="p-3" style="font-size:0.82rem;">
+                    <div class="mb-3">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="bi bi-journal-code text-primary me-2"></i>
+                            <strong>API Reference</strong>
+                        </div>
+                        <div class="ms-4 text-muted">Chat Completions &middot; Embeddings &middot; Models &middot; Authentication</div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="bi bi-rocket-takeoff text-success me-2"></i>
+                            <strong>Getting Started</strong>
+                        </div>
+                        <div class="ms-4 text-muted">Quick Start Guide &middot; Python SDK &middot; cURL Examples &middot; Rate Limits</div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="bi bi-puzzle text-warning me-2"></i>
+                            <strong>Integrations</strong>
+                        </div>
+                        <div class="ms-4 text-muted">LangChain &middot; LlamaIndex &middot; Continue.dev &middot; Open WebUI</div>
+                    </div>
+                    <div>
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="bi bi-gear text-secondary me-2"></i>
+                            <strong>Advanced</strong>
+                        </div>
+                        <div class="ms-4 text-muted">Tool Calling &middot; Structured Output &middot; Streaming &middot; Multimodal</div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
+
+    <!-- ── Feature 6: Infrastructure ── -->
+    <div class="row align-items-center g-4">
+        <div class="col-lg-12">
+            <div class="text-center mb-4">
+                <span class="badge bg-dark bg-opacity-10 text-dark mb-2 px-3 py-2" style="font-size:0.8rem;"><i class="bi bi-hdd-rack"></i> Enterprise Infrastructure</span>
+                <h3 class="fw-bold mt-2">Built for Production</h3>
+                <p class="text-muted mx-auto" style="max-width:600px;">MindRouter2 is designed for reliability, observability, and scale &mdash; load balancing across GPU backends with intelligent routing and fair-share scheduling.</p>
+            </div>
+            <div class="row g-3">
+                <div class="col-md-4 col-sm-6">
+                    <div class="card border-0 shadow-sm h-100 text-center p-3">
+                        <div class="mb-2"><i class="bi bi-diagram-3 text-primary" style="font-size:2rem;"></i></div>
+                        <h6 class="fw-bold mb-1">Load Balancing</h6>
+                        <p class="text-muted mb-0" style="font-size:0.82rem;">Intelligent routing across multiple GPU backends with health checks and failover</p>
+                    </div>
+                </div>
+                <div class="col-md-4 col-sm-6">
+                    <div class="card border-0 shadow-sm h-100 text-center p-3">
+                        <div class="mb-2"><i class="bi bi-shield-check text-success" style="font-size:2rem;"></i></div>
+                        <h6 class="fw-bold mb-1">Fair-Share Scheduling</h6>
+                        <p class="text-muted mb-0" style="font-size:0.82rem;">Weighted quotas, rate limiting, and fair access across users and groups</p>
+                    </div>
+                </div>
+                <div class="col-md-4 col-sm-6">
+                    <div class="card border-0 shadow-sm h-100 text-center p-3">
+                        <div class="mb-2"><i class="bi bi-gpu-card text-warning" style="font-size:2rem;"></i></div>
+                        <h6 class="fw-bold mb-1">GPU Monitoring</h6>
+                        <p class="text-muted mb-0" style="font-size:0.82rem;">Real-time GPU utilization, memory, temperature, and power metrics across the cluster</p>
+                    </div>
+                </div>
+                <div class="col-md-4 col-sm-6">
+                    <div class="card border-0 shadow-sm h-100 text-center p-3">
+                        <div class="mb-2"><i class="bi bi-translate text-info" style="font-size:2rem;"></i></div>
+                        <h6 class="fw-bold mb-1">Protocol Translation</h6>
+                        <p class="text-muted mb-0" style="font-size:0.82rem;">Seamless translation between OpenAI, Ollama, and vLLM API formats</p>
+                    </div>
+                </div>
+                <div class="col-md-4 col-sm-6">
+                    <div class="card border-0 shadow-sm h-100 text-center p-3">
+                        <div class="mb-2"><i class="bi bi-graph-up text-danger" style="font-size:2rem;"></i></div>
+                        <h6 class="fw-bold mb-1">Observability</h6>
+                        <p class="text-muted mb-0" style="font-size:0.82rem;">Prometheus metrics, structured logging, request audit trail, and admin dashboards</p>
+                    </div>
+                </div>
+                <div class="col-md-4 col-sm-6">
+                    <div class="card border-0 shadow-sm h-100 text-center p-3">
+                        <div class="mb-2"><i class="bi bi-key text-secondary" style="font-size:2rem;"></i></div>
+                        <h6 class="fw-bold mb-1">Authentication</h6>
+                        <p class="text-muted mb-0" style="font-size:0.82rem;">API key management, Azure AD SSO, group-based access control, and user quotas</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
 </div>
 {% endblock %}
 
