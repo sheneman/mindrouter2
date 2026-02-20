@@ -44,6 +44,7 @@ dashboard_router.include_router(azure_router)
 templates_path = os.path.join(os.path.dirname(__file__), "templates")
 templates = Jinja2Templates(directory=templates_path)
 templates.env.filters["fromjson"] = lambda s: json.loads(s) if s else []
+templates.env.globals["version"] = get_settings().app_version
 
 
 # Session management helpers using signed cookies
@@ -2037,3 +2038,82 @@ async def api_admin_conversations_export(
         include_content=include_content,
         db=db,
     )
+
+
+# ---------------------------------------------------------------------------
+# Admin Chat Config
+# ---------------------------------------------------------------------------
+
+@dashboard_router.get("/admin/chat-config", response_class=HTMLResponse)
+async def admin_chat_config(
+    request: Request,
+    success: Optional[str] = None,
+    error: Optional[str] = None,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Admin chat configuration page."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or (not user.group or not user.group.is_admin):
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    # Get distinct model names from healthy backends (exclude embedding)
+    registry = get_registry()
+    backends = await registry.get_healthy_backends()
+    available_models = set()
+    for backend in backends:
+        backend_models = await registry.get_backend_models(backend.id)
+        for m in backend_models:
+            if "embed" not in m.name.lower():
+                available_models.add(m.name)
+
+    core_models = await crud.get_config_json(db, "chat.core_models", [])
+    default_model = await crud.get_config_json(db, "chat.default_model", None)
+
+    return templates.TemplateResponse(
+        "admin/chat_config.html",
+        {
+            "request": request,
+            "user": user,
+            "available_models": sorted(available_models),
+            "core_models": core_models,
+            "default_model": default_model,
+            "success": success,
+            "error": error,
+        },
+    )
+
+
+@dashboard_router.post("/admin/chat-config")
+async def admin_chat_config_post(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Handle chat config form submissions."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or (not user.group or not user.group.is_admin):
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    form = await request.form()
+    action = form.get("action")
+
+    if action == "set_default":
+        default_model = form.get("default_model", "")
+        await crud.set_config(db, "chat.default_model", default_model if default_model else None)
+        await db.commit()
+        return RedirectResponse(url="/admin/chat-config?success=default_updated", status_code=302)
+
+    elif action == "set_core_models":
+        selected = form.getlist("core_models")
+        await crud.set_config(db, "chat.core_models", selected)
+        await db.commit()
+        return RedirectResponse(url="/admin/chat-config?success=core_updated", status_code=302)
+
+    return RedirectResponse(url="/admin/chat-config?error=Unknown+action", status_code=302)

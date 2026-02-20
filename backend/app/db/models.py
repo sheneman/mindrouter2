@@ -799,3 +799,13 @@ class BlogPost(Base, TimestampMixin, SoftDeleteMixin):
 
     # Relationships
     author: Mapped["User"] = relationship("User")
+
+
+class AppConfig(Base, TimestampMixin):
+    """Key-value application configuration stored in the database."""
+
+    __tablename__ = "app_config"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)  # JSON-encoded
+    description: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)

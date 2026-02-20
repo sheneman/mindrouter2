@@ -57,6 +57,11 @@
             </a>
         </li>
         <li class="nav-item">
+            <a class="nav-link {% if active == 'chat_config' %}active{% endif %}" href="/admin/chat-config" {% if active == 'chat_config' %}aria-current="page"{% endif %}>
+                <i class="bi bi-chat-square-text"></i> Chat Config
+            </a>
+        </li>
+        <li class="nav-item">
             <a class="nav-link {% if active == 'blog' %}active{% endif %}" href="/admin/blog" {% if active == 'blog' %}aria-current="page"{% endif %}>
                 <i class="bi bi-pencil-square"></i> Blog Posts
             </a>

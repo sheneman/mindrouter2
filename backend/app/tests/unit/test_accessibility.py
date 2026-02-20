@@ -344,40 +344,6 @@ class TestLogin:
         assert 'role="alert"' in self.html
 
 
-# ── 5. Request API Key Page Tests ────────────────────────────────
-
-class TestRequestApiKey:
-    """Tests for public/request_api_key.html."""
-
-    @pytest.fixture(autouse=True)
-    def _load(self):
-        self.html = _read_template("public/request_api_key.html")
-        self.tags = _parse_tags(self.html)
-
-    def test_has_page_heading(self):
-        h1s = _find_tags(self.tags, "h1")
-        assert h1s, "Request API Key page should have an h1"
-
-    def test_form_fields_have_labels(self):
-        expected_fors = ["name", "email", "affiliation", "use_case"]
-        for field_id in expected_fors:
-            labels = [
-                t for t in _find_tags(self.tags, "label")
-                if t["attrs"].get("for") == field_id
-            ]
-            assert labels, f"Missing <label for='{field_id}'>"
-
-    def test_name_autocomplete(self):
-        inputs = _find_by_attr(self.tags, "id", "name")
-        assert inputs
-        assert inputs[0]["attrs"].get("autocomplete") == "name"
-
-    def test_email_autocomplete(self):
-        inputs = _find_by_attr(self.tags, "id", "email")
-        assert inputs
-        assert inputs[0]["attrs"].get("autocomplete") == "email"
-
-
 # ── 6. Admin Template Tests ──────────────────────────────────────
 
 ADMIN_TEMPLATES = [
@@ -564,7 +530,6 @@ class TestMetrics:
 
 @pytest.mark.parametrize("template_path,expected_tag", [
     ("public/login.html", "h1"),
-    ("public/request_api_key.html", "h1"),
     ("user/key_created.html", "h1"),
     ("user/request_quota.html", "h1"),
 ])
@@ -580,7 +545,6 @@ def test_standalone_pages_have_h1(template_path, expected_tag):
 
 @pytest.mark.parametrize("template_path", [
     "public/login.html",
-    "public/request_api_key.html",
     "user/key_created.html",
     "user/request_quota.html",
     "chat.html",

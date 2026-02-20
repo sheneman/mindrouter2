@@ -339,6 +339,10 @@ async def chat_list_models(
             if "embed" in model.name.lower():
                 model_data[model.name]["capabilities"]["embeddings"] = True
 
+    # Read core model config from DB
+    core_models = await crud.get_config_json(db, "chat.core_models", [])
+    default_model = await crud.get_config_json(db, "chat.default_model", None)
+
     models = []
     for name, data in sorted(model_data.items()):
         # Skip embedding-only models
@@ -347,9 +351,18 @@ async def chat_list_models(
         models.append({
             "id": name,
             "capabilities": data["capabilities"],
+            "is_core": name in core_models,
         })
 
-    return JSONResponse({"models": models})
+    # Check whether any core model is currently online
+    online_names = {m["id"] for m in models}
+    has_core = any(cm in online_names for cm in core_models)
+
+    return JSONResponse({
+        "models": models,
+        "default_model": default_model,
+        "has_core": has_core,
+    })
 
 
 # ---------------------------------------------------------------------------

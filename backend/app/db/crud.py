@@ -14,8 +14,9 @@
 
 """Database CRUD operations for MindRouter2."""
 
+import json as _json
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +25,7 @@ from sqlalchemy.orm import selectinload
 from backend.app.db.models import (
     ApiKey,
     ApiKeyStatus,
+    AppConfig,
     Artifact,
     Backend,
     BackendEngine,
@@ -2084,3 +2086,38 @@ async def delete_blog_post(db: AsyncSession, post_id: int) -> bool:
         await db.flush()
         return True
     return False
+
+
+# AppConfig CRUD
+async def get_config(db: AsyncSession, key: str) -> Optional[str]:
+    """Get a raw config value (JSON string) by key."""
+    result = await db.execute(select(AppConfig.value).where(AppConfig.key == key))
+    return result.scalar_one_or_none()
+
+
+async def get_config_json(db: AsyncSession, key: str, default: Any = None) -> Any:
+    """Get a config value parsed from JSON."""
+    raw = await get_config(db, key)
+    if raw is None:
+        return default
+    try:
+        return _json.loads(raw)
+    except (ValueError, TypeError):
+        return default
+
+
+async def set_config(
+    db: AsyncSession, key: str, value: Any, description: Optional[str] = None
+) -> None:
+    """Upsert a config value (JSON-encodes the value)."""
+    json_value = _json.dumps(value)
+    result = await db.execute(select(AppConfig).where(AppConfig.key == key))
+    existing = result.scalar_one_or_none()
+    if existing:
+        existing.value = json_value
+        if description is not None:
+            existing.description = description
+    else:
+        row = AppConfig(key=key, value=json_value, description=description)
+        db.add(row)
+    await db.flush()
