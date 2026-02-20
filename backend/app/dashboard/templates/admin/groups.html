@@ -48,7 +48,7 @@
                                 <dt class="col-6">Slug</dt>
                                 <dd class="col-6"><code>{{ group.name }}</code></dd>
                                 <dt class="col-6">Token Budget</dt>
-                                <dd class="col-6">{{ "{:,}".format(group.token_budget) }}</dd>
+                                <dd class="col-6">{% if group.token_budget == 0 %}<span class="badge bg-info">Unlimited</span>{% else %}{{ "{:,}".format(group.token_budget) }}{% endif %}</dd>
                                 <dt class="col-6">RPM Limit</dt>
                                 <dd class="col-6">{{ group.rpm_limit }}</dd>
                                 <dt class="col-6">Max Concurrent</dt>
@@ -93,7 +93,11 @@
                                     <div class="row">
                                         <div class="col-6 mb-2">
                                             <label class="form-label small">Token Budget</label>
-                                            <input type="number" class="form-control form-control-sm" name="token_budget" value="{{ group.token_budget }}">
+                                            <div class="form-check mb-1">
+                                                <input class="form-check-input unlimited-toggle" type="checkbox" id="unlimited_edit_{{ group.id }}" {% if group.token_budget == 0 %}checked{% endif %} data-target="token_budget_edit_{{ group.id }}">
+                                                <label class="form-check-label small" for="unlimited_edit_{{ group.id }}">Unlimited</label>
+                                            </div>
+                                            <input type="number" class="form-control form-control-sm" name="token_budget" id="token_budget_edit_{{ group.id }}" value="{{ group.token_budget }}" {% if group.token_budget == 0 %}disabled{% endif %}>
                                         </div>
                                         <div class="col-6 mb-2">
                                             <label class="form-label small">RPM Limit</label>
@@ -157,6 +161,10 @@
                     <div class="row">
                         <div class="col-6 mb-3">
                             <label for="token_budget" class="form-label">Token Budget</label>
+                            <div class="form-check mb-1">
+                                <input class="form-check-input unlimited-toggle" type="checkbox" id="unlimited_create" data-target="token_budget">
+                                <label class="form-check-label" for="unlimited_create">Unlimited</label>
+                            </div>
                             <input type="number" class="form-control" id="token_budget" name="token_budget" value="100000">
                         </div>
                         <div class="col-6 mb-3">
@@ -193,4 +201,33 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.querySelectorAll('.unlimited-toggle').forEach(function(cb) {
+    var targetId = cb.getAttribute('data-target');
+    var input = document.getElementById(targetId);
+    cb.addEventListener('change', function() {
+        if (cb.checked) {
+            input.dataset.prevValue = input.value;
+            input.value = 0;
+            input.disabled = true;
+        } else {
+            input.disabled = false;
+            input.value = input.dataset.prevValue || 100000;
+        }
+    });
+    // On form submit, re-enable disabled inputs so value is sent
+    var form = cb.closest('form');
+    if (form) {
+        form.addEventListener('submit', function() {
+            if (cb.checked) {
+                input.disabled = false;
+                input.value = 0;
+            }
+        });
+    }
+});
+</script>
 {% endblock %}
