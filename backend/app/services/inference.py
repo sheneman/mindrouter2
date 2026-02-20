@@ -177,7 +177,7 @@ class InferenceService:
 
                 chunk_count += 1
 
-                # Accumulate content and track finish reason
+                # Accumulate content/reasoning and track finish reason
                 for choice in chunk.choices:
                     if choice.delta.content:
                         full_content += choice.delta.content

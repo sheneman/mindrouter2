@@ -87,6 +87,8 @@ class OpenAIInTranslator:
             response_format=response_format,
             n=data.get("n", 1),
             user=data.get("user"),
+            think=data.get("think"),
+            reasoning_effort=data.get("reasoning_effort"),
         )
 
     @staticmethod

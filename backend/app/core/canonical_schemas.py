@@ -108,6 +108,7 @@ class CanonicalMessage(BaseModel):
     """Canonical message representation."""
     role: MessageRole
     content: Optional[Union[str, List[ContentBlock]]] = None
+    reasoning: Optional[str] = None  # Full reasoning content (non-streaming)
     name: Optional[str] = None  # For tool messages
     tool_calls: Optional[List[CanonicalToolCall]] = None
     tool_call_id: Optional[str] = None  # For tool response messages
@@ -166,7 +167,8 @@ class CanonicalChatRequest(BaseModel):
     min_p: Optional[float] = Field(default=None, ge=0, le=1)
 
     # Reasoning mode
-    think: Optional[bool] = None
+    think: Optional[bool] = None  # Toggle thinking on/off (Ollama, Qwen)
+    reasoning_effort: Optional[str] = None  # "low", "medium", "high" (GPT-OSS)
 
     # Opaque backend-specific options (e.g. Ollama mirostat, tfs_z, num_ctx)
     backend_options: Optional[Dict[str, Any]] = None
@@ -300,6 +302,7 @@ class CanonicalStreamDelta(BaseModel):
     """Delta content for streaming responses."""
     role: Optional[MessageRole] = None
     content: Optional[str] = None
+    reasoning: Optional[str] = None  # Thinking/reasoning content
     tool_calls: Optional[List[CanonicalStreamToolCallDelta]] = None
 
 

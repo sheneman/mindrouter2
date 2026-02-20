@@ -87,7 +87,11 @@ class VLLMOutTranslator:
             payload["repetition_penalty"] = canonical.repeat_penalty  # vLLM name
         if canonical.min_p is not None:
             payload["min_p"] = canonical.min_p
-        # Note: backend_options and think are Ollama-only, intentionally ignored
+        # Reasoning/thinking support for vLLM
+        if canonical.reasoning_effort is not None:
+            payload["reasoning_effort"] = canonical.reasoning_effort
+        if canonical.think is not None:
+            payload["chat_template_kwargs"] = {"enable_thinking": canonical.think}
         if canonical.n != 1:
             payload["n"] = canonical.n
         if canonical.user:
@@ -215,6 +219,7 @@ class VLLMOutTranslator:
             message = CanonicalMessage(
                 role=MessageRole(message_data.get("role", "assistant")),
                 content=message_data.get("content"),
+                reasoning=message_data.get("reasoning_content"),
                 tool_calls=tool_calls,
             )
             choices.append(
@@ -312,6 +317,7 @@ class VLLMOutTranslator:
                                         else None
                                     ),
                                     content=delta_data.get("content"),
+                                    reasoning=delta_data.get("reasoning_content"),
                                     tool_calls=tc_deltas,
                                 )
                                 choices.append(

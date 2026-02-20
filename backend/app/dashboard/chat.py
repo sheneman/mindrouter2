@@ -328,11 +328,14 @@ async def chat_list_models(
                         "multimodal": False,
                         "embeddings": False,
                         "structured_output": True,
+                        "thinking": False,
                     },
                     "created": int(model.created_at.timestamp()) if model.created_at else int(time.time()),
                 }
             if model.supports_multimodal:
                 model_data[model.name]["capabilities"]["multimodal"] = True
+            if getattr(model, "supports_thinking", False):
+                model_data[model.name]["capabilities"]["thinking"] = True
             if "embed" in model.name.lower():
                 model_data[model.name]["capabilities"]["embeddings"] = True
 
@@ -792,11 +795,20 @@ async def chat_completions(
 
     # Build canonical request
     try:
-        canonical = OpenAIInTranslator.translate_chat_request({
+        request_data = {
             "model": model,
             "messages": api_messages,
             "stream": stream,
-        })
+        }
+        # Pass thinking parameters if provided
+        think = body.get("think")
+        reasoning_effort = body.get("reasoning_effort")
+        if think is not None:
+            request_data["think"] = think
+        if reasoning_effort is not None:
+            request_data["reasoning_effort"] = reasoning_effort
+
+        canonical = OpenAIInTranslator.translate_chat_request(request_data)
     except Exception as e:
         return JSONResponse({"error": f"Invalid request: {e}"}, status_code=400)
 

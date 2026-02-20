@@ -519,6 +519,44 @@
         display: flex;
     }
 
+    /* Thinking/reasoning block */
+    .thinking-block {
+        margin-bottom: 0.75rem;
+        border: 1px solid #e9ecef;
+        border-radius: 0.375rem;
+        background: #fefce8;
+    }
+    .thinking-toggle {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.4rem 0.75rem;
+        cursor: pointer;
+        font-size: 0.8rem;
+        color: #92400e;
+        background: none;
+        border: none;
+        width: 100%;
+        text-align: left;
+    }
+    .thinking-toggle:hover { background: #fef9c3; }
+    .thinking-toggle i { transition: transform 0.2s; }
+    .thinking-toggle.collapsed i { transform: rotate(-90deg); }
+    .thinking-content {
+        padding: 0.5rem 0.75rem;
+        border-top: 1px solid #e9ecef;
+        font-size: 0.85rem;
+        color: #78350f;
+        white-space: pre-wrap;
+        max-height: 300px;
+        overflow-y: auto;
+    }
+    .thinking-controls {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
     /* Responsive */
     @media (max-width: 768px) {
         .chat-sidebar { position: absolute; z-index: 50; height: 100%; }
@@ -552,6 +590,17 @@
             <select class="form-select form-select-sm" id="modelSelect" aria-label="Select AI model">
                 <option value="">Loading models...</option>
             </select>
+            <div class="thinking-controls" id="thinkingControls" style="display:none;">
+                <div class="form-check form-switch d-inline-flex align-items-center me-2" id="thinkingToggleWrap">
+                    <input class="form-check-input" type="checkbox" id="thinkingToggle">
+                    <label class="form-check-label ms-1 small" for="thinkingToggle">Thinking</label>
+                </div>
+                <select class="form-select form-select-sm" id="reasoningEffort" style="display:none; width:auto;">
+                    <option value="low">Low</option>
+                    <option value="medium" selected>Medium</option>
+                    <option value="high">High</option>
+                </select>
+            </div>
         </div>
 
         {% if not has_api_key %}
@@ -964,6 +1013,7 @@
     let _streamTailEl = null;
     let _streamRenderedEl = null;
     let _streamFullContent = '';
+    let _streamReasoningContent = '';
     let _tailPending = false;
     let _tailBuffer = '';
 
@@ -982,6 +1032,7 @@
         _streamTokens = 0;
         _streamLastRenderTime = performance.now();
         _streamFullContent = '';
+        _streamReasoningContent = '';
         _tailBuffer = '';
         _tailPending = false;
     }
@@ -1020,6 +1071,30 @@
         }
     }
 
+    function appendStreamReasoning(delta) {
+        _streamReasoningContent += delta;
+        // Find or create thinking block in the current assistant message
+        const msgs = messagesEl.querySelectorAll('.message-assistant');
+        if (!msgs.length) return;
+        const last = msgs[msgs.length - 1];
+        let thinkingBlock = last.querySelector('.thinking-block');
+        if (!thinkingBlock) {
+            thinkingBlock = document.createElement('div');
+            thinkingBlock.className = 'thinking-block';
+            thinkingBlock.innerHTML = `
+                <button class="thinking-toggle" onclick="this.classList.toggle('collapsed'); this.nextElementSibling.style.display = this.classList.contains('collapsed') ? 'none' : '';">
+                    <i class="bi bi-lightbulb"></i> Thinking...
+                </button>
+                <div class="thinking-content"></div>
+            `;
+            const contentEl = last.querySelector('.message-content');
+            contentEl.parentNode.insertBefore(thinkingBlock, contentEl);
+        }
+        const contentDiv = thinkingBlock.querySelector('.thinking-content');
+        contentDiv.textContent += delta;
+        scrollToBottom();
+    }
+
     function flushStreamRender() {
         if (!_streamRenderedEl) return;
         const protected_ = protectMath(_streamFullContent || '');
@@ -1049,10 +1124,24 @@
         addCopyButtons(last);
         renderMath(last);
         addCopyResponseButton(last, content);
+
+        // Finalize thinking block: update label with word count and collapse
+        if (_streamReasoningContent) {
+            const thinkingBlock = last.querySelector('.thinking-block');
+            if (thinkingBlock) {
+                const toggleBtn = thinkingBlock.querySelector('.thinking-toggle');
+                const words = _streamReasoningContent.split(/\s+/).filter(w => w).length;
+                toggleBtn.innerHTML = '<i class="bi bi-lightbulb"></i> Thinking (' + words + ' words)';
+                toggleBtn.classList.add('collapsed');
+                thinkingBlock.querySelector('.thinking-content').style.display = 'none';
+            }
+        }
+
         _streamRenderedEl = null;
         _streamTailEl = null;
         _streamTokens = 0;
         _streamFullContent = '';
+        _streamReasoningContent = '';
         scrollToBottom();
     }
 
@@ -1182,6 +1271,7 @@
             } else {
                 modelSelect.innerHTML = '<option value="">No models available</option>';
             }
+            updateThinkingControls();
         } catch (e) {
             // Only show error if dropdown is empty (don't overwrite valid list on transient failure)
             if (!modelSelect.options.length || !modelSelect.value) {
@@ -1198,8 +1288,26 @@
         return caps && caps.multimodal;
     }
 
+    function updateThinkingControls() {
+        const caps = modelCapabilities[modelSelect.value];
+        const controls = document.getElementById('thinkingControls');
+        const effortSelect = document.getElementById('reasoningEffort');
+        const toggleWrap = document.getElementById('thinkingToggleWrap');
+
+        if (caps && caps.thinking) {
+            controls.style.display = '';
+            const isGptOss = modelSelect.value.toLowerCase().includes('gpt-oss');
+            effortSelect.style.display = isGptOss ? '' : 'none';
+            // GPT-OSS: always thinking, show effort only; Qwen: toggle on/off
+            toggleWrap.style.display = isGptOss ? 'none' : '';
+        } else {
+            controls.style.display = 'none';
+        }
+    }
+
     modelSelect.addEventListener('change', () => {
         localStorage.setItem('mindrouter_last_model', modelSelect.value);
+        updateThinkingControls();
         // Update server-side model if conversation is active
         if (activeConvId) {
             fetch(`/chat/api/conversations/${activeConvId}`, {
@@ -1429,16 +1537,29 @@
         abortController = new AbortController();
 
         try {
+            const bodyData = {
+                conversation_id: activeConvId,
+                content: text,
+                attachment_ids: attachmentIds,
+                model: modelSelect.value,
+                stream: true,
+            };
+
+            // Include thinking/reasoning params when applicable
+            const caps = modelCapabilities[modelSelect.value];
+            if (caps && caps.thinking) {
+                const isGptOss = modelSelect.value.toLowerCase().includes('gpt-oss');
+                if (isGptOss) {
+                    bodyData.reasoning_effort = document.getElementById('reasoningEffort').value;
+                } else {
+                    bodyData.think = document.getElementById('thinkingToggle').checked;
+                }
+            }
+
             const res = await fetch('/chat/api/completions', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    conversation_id: activeConvId,
-                    content: text,
-                    attachment_ids: attachmentIds,
-                    model: modelSelect.value,
-                    stream: true,
-                }),
+                body: JSON.stringify(bodyData),
                 signal: abortController.signal,
             });
 
@@ -1474,9 +1595,14 @@
                             appendStreamDelta(`\n\n**Error:** ${msg}`);
                             break;
                         }
-                        const delta = chunk.choices?.[0]?.delta?.content;
-                        if (delta) {
-                            appendStreamDelta(delta);
+                        const delta = chunk.choices?.[0]?.delta;
+                        const contentDelta = delta?.content;
+                        const reasoningDelta = delta?.reasoning;
+                        if (reasoningDelta) {
+                            appendStreamReasoning(reasoningDelta);
+                        }
+                        if (contentDelta) {
+                            appendStreamDelta(contentDelta);
                         }
                     } catch (e) {
                         // skip malformed chunks

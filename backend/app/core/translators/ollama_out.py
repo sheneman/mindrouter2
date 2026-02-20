@@ -193,6 +193,7 @@ class OllamaOutTranslator:
             message=CanonicalMessage(
                 role=MessageRole(message.get("role", "assistant")),
                 content=message.get("content") or None,
+                reasoning=message.get("thinking") or None,
                 tool_calls=tool_calls,
             ),
             finish_reason=finish_reason,
@@ -283,9 +284,12 @@ class OllamaOutTranslator:
                     if is_done:
                         finish_reason = "tool_calls" if tc_deltas else "stop"
 
+                    thinking = message.get("thinking", "")
+
                     delta = CanonicalStreamDelta(
-                        role=MessageRole.ASSISTANT if content or tc_deltas else None,
+                        role=MessageRole.ASSISTANT if content or thinking or tc_deltas else None,
                         content=content if content else None,
+                        reasoning=thinking if thinking else None,
                         tool_calls=tc_deltas,
                     )
 
