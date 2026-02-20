@@ -800,11 +800,17 @@
         return depth === 0 ? i : -1;
     }
 
-    // Bare LaTeX commands that should be wrapped in $...$ for KaTeX
-    const BARE_LATEX_RE = /\\(boxed|text|textbf|textit|mathbf|mathit|mathrm|frac|sqrt|hat|bar|vec|dot|tilde|overline|underline)\{/;
+    // -----------------------------------------------------------------------
+    // Phase 1: Bare LaTeX commands with {…} arguments (e.g. \frac{a}{b})
+    // -----------------------------------------------------------------------
+    const BARE_LATEX_RE = /\\(boxed|text|textbf|textit|mathbf|mathit|mathrm|mathcal|mathbb|mathsf|boldsymbol|operatorname|frac|dfrac|tfrac|binom|sqrt|hat|bar|vec|dot|ddot|tilde|widetilde|widehat|overline|underline|overbrace|underbrace)\{/;
+
+    function isInsideDollar(text, pos) {
+        const before = text.slice(0, pos);
+        return ((before.match(/(?<!\\)\$/g) || []).length % 2) === 1;
+    }
 
     function wrapBareLatex(text) {
-        // Iteratively find and wrap bare LaTeX commands not already inside $ delimiters
         let result = '';
         let i = 0;
         while (i < text.length) {
@@ -814,13 +820,9 @@
 
             const cmdStart = i + m.index;
             const cmd = m[1];
-            const braceStart = cmdStart + m[0].length - 1; // position of '{'
+            const braceStart = cmdStart + m[0].length - 1;
 
-            // Check if already inside a $ delimiter (crude: look for odd number of $ before)
-            const before = text.slice(0, cmdStart);
-            const dollarCount = (before.match(/(?<!\\)\$/g) || []).length;
-            if (dollarCount % 2 === 1) {
-                // Already inside $...$, skip past this match
+            if (isInsideDollar(text, cmdStart)) {
                 result += text.slice(i, braceStart + 1);
                 i = braceStart + 1;
                 continue;
@@ -828,19 +830,20 @@
 
             let end = matchBraces(text, braceStart);
             if (end === -1) {
-                // Unbalanced — skip
                 result += text.slice(i, braceStart + 1);
                 i = braceStart + 1;
                 continue;
             }
 
-            // For \frac, \sqrt with optional arg — consume a second {} group if present
-            if ((cmd === 'frac') && end < text.length && text[end] === '{') {
+            // \frac, \dfrac, \tfrac, \binom — consume second {} group
+            if (/^(frac|dfrac|tfrac|binom)$/.test(cmd) && end < text.length && text[end] === '{') {
                 const end2 = matchBraces(text, end);
                 if (end2 !== -1) end = end2;
             }
 
-            // Emit text before the command, then wrap in $...$
+            // Also consume trailing sub/superscripts: _{...} ^{...}
+            end = consumeSubSuperscripts(text, end);
+
             result += text.slice(i, cmdStart);
             result += '$' + text.slice(cmdStart, end) + '$';
             i = end;
@@ -848,6 +851,82 @@
         return result;
     }
 
+    // -----------------------------------------------------------------------
+    // Phase 2: Bare LaTeX operators/symbols with optional _{…} ^{…}
+    // e.g. \lim_{x \to 0}, \sum_{i=0}^{n}, \sin, \alpha
+    // -----------------------------------------------------------------------
+    const BARE_OP_RE = /\\(lim|sum|int|iint|iiint|oint|prod|coprod|bigcup|bigcap|bigvee|bigwedge|sup|inf|max|min|log|ln|sin|cos|tan|sec|csc|cot|sinh|cosh|tanh|arcsin|arccos|arctan|det|gcd|deg|dim|ker|exp|arg|hom|Pr|to|gets|mapsto|implies|iff|infty|pm|mp|times|div|cdot|cdots|ldots|ddots|vdots|star|circ|bullet|oplus|otimes|dagger|approx|equiv|cong|sim|simeq|neq|ne|leq|le|geq|ge|ll|gg|prec|succ|subset|supset|subseteq|supseteq|in|notin|ni|forall|exists|nexists|nabla|partial|ell|Re|Im|wp|aleph|emptyset|varnothing|neg|lnot|land|lor|cup|cap|setminus|triangle|angle|perp|parallel|mid|nmid|vdash|models|therefore|because|alpha|beta|gamma|delta|epsilon|varepsilon|zeta|eta|theta|vartheta|iota|kappa|lambda|mu|nu|xi|pi|varpi|rho|varrho|sigma|varsigma|tau|upsilon|phi|varphi|chi|psi|omega|Gamma|Delta|Theta|Lambda|Xi|Pi|Sigma|Upsilon|Phi|Psi|Omega)\b/;
+
+    // Consume _{…} and ^{…} (or single-char _x ^2) after position `end`
+    function consumeSubSuperscripts(text, end) {
+        let consumed = true;
+        while (consumed && end < text.length) {
+            consumed = false;
+            if ((text[end] === '_' || text[end] === '^') && end + 1 < text.length) {
+                if (text[end + 1] === '{') {
+                    const braceEnd = matchBraces(text, end + 1);
+                    if (braceEnd !== -1) { end = braceEnd; consumed = true; }
+                } else {
+                    end += 2; // single char: ^n, _i
+                    consumed = true;
+                }
+            }
+        }
+        return end;
+    }
+
+    function wrapBareOperators(text) {
+        let result = '';
+        let i = 0;
+        while (i < text.length) {
+            const remaining = text.slice(i);
+            const m = remaining.match(BARE_OP_RE);
+            if (!m) { result += remaining; break; }
+
+            const cmdStart = i + m.index;
+
+            if (isInsideDollar(text, cmdStart)) {
+                result += text.slice(i, cmdStart + m[0].length);
+                i = cmdStart + m[0].length;
+                continue;
+            }
+
+            let end = cmdStart + m[0].length;
+            end = consumeSubSuperscripts(text, end);
+
+            result += text.slice(i, cmdStart);
+            result += '$' + text.slice(cmdStart, end) + '$';
+            i = end;
+        }
+        return result;
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 3: Merge adjacent $…$ blocks that form a single expression
+    // e.g. $\lim_{x \to 0}$ $\frac{a}{b}$ → $\lim_{x \to 0} \frac{a}{b}$
+    // e.g. $\frac{a}{b}$ + $\frac{c}{d}$ → $\frac{a}{b} + \frac{c}{d}$
+    // -----------------------------------------------------------------------
+    function mergeAdjacentMath(text) {
+        // Connectors: whitespace only, or whitespace around a math operator
+        const RE = /\$([^$]+)\$(\s*[+\-=<>≤≥≈,]\s*|\s+)\$([^$]+)\$/g;
+        let prev;
+        do {
+            prev = text;
+            text = text.replace(RE, function(_match, a, connector, b) {
+                // Safety: only merge if at least one side contains a LaTeX command
+                if (a.includes('\\') || b.includes('\\')) {
+                    const sep = connector.trim();
+                    return '$' + a + (sep ? ' ' + sep + ' ' : ' ') + b + '$';
+                }
+                return _match;
+            });
+        } while (text !== prev);
+        return text;
+    }
+
+    // -----------------------------------------------------------------------
+    // Protection: extract all math blocks into placeholders before markdown
+    // -----------------------------------------------------------------------
     function protectMath(text) {
         _mathPlaceholders = [];
         let idx = 0;
@@ -857,27 +936,32 @@
             idx++;
             return token;
         }
-        // First, wrap bare LaTeX commands in $...$ so KaTeX can render them
+
+        // Phase 1: wrap bare \command{…} (frac, boxed, text, etc.)
         text = wrapBareLatex(text);
-        // Wrap bare \begin{env}...\end{env} blocks in $$...$$ (not already inside $)
+        // Phase 2: wrap bare \operators and \symbols (lim, sum, sin, alpha, etc.)
+        text = wrapBareOperators(text);
+        // Phase 3: merge adjacent $…$ blocks into single expressions
+        text = mergeAdjacentMath(text);
+
+        // Wrap bare \begin{env}…\end{env} blocks in $$…$$ (not already inside $)
         text = text.replace(/(\\begin\{([a-zA-Z*]+)\}[\s\S]*?\\end\{\2\})/g, function(match, body, env, offset) {
-            // Check if already inside $ delimiters
             const before = text.slice(0, offset);
             const dollarCount = (before.match(/(?<!\\)\$/g) || []).length;
-            if (dollarCount % 2 === 1) return match; // inside $...$, leave alone
-            // Check if preceded by $ or $$
+            if (dollarCount % 2 === 1) return match;
             const trimBefore = before.trimEnd();
-            if (trimBefore.endsWith('$')) return match; // already delimited
+            if (trimBefore.endsWith('$')) return match;
             return '$$' + match + '$$';
         });
+
         // Protect delimited math blocks from markdown mangling
         text = text.replace(/\$\$([\s\S]+?)\$\$/g, placeholder);
         text = text.replace(/\\\[([\s\S]+?)\\\]/g, placeholder);
         text = text.replace(/\\\(([\s\S]+?)\\\)/g, placeholder);
-        // Multiline $...$ containing LaTeX environments (e.g. $\boxed{\begin{aligned}...\end{aligned}}$)
+        // Multiline $…$ containing LaTeX environments
         text = text.replace(/(?<![\\$])\$([\s\S]*?\\begin\{[a-zA-Z*]+\}[\s\S]*?\\end\{[a-zA-Z*]+\}[\s\S]*?)\$(?!\$)/g,
             function(match) { return placeholder(match); });
-        // Single-line inline $...$
+        // Single-line inline $…$
         text = text.replace(/(?<![\\$])\$(?!\$)(.+?)(?<![\\$])\$(?!\$)/g, placeholder);
         return text;
     }
