@@ -356,7 +356,75 @@ response = client.chat.completions.create(
         </div>
     </div>
 
-    <!-- ── Feature 5: Docs & Blog ── -->
+    <!-- ── Feature 5: Translation Architecture ── -->
+    <div class="row align-items-center mb-5 g-4">
+        <div class="col-lg-6">
+            <span class="badge bg-opacity-10 mb-2 px-3 py-2" style="font-size:0.8rem; background:rgba(111,66,193,0.1); color:#6f42c1;"><i class="bi bi-translate"></i> Translation Architecture</span>
+            <h3 class="fw-bold mt-2">Universal Protocol Translation</h3>
+            <p class="text-muted">MindRouter's innovative translation layer is the engine behind its flexibility. Rather than locking you into a single API format, it translates seamlessly between <strong>OpenAI</strong>, <strong>Ollama</strong>, and <strong>Anthropic</strong> protocols &mdash; on both the client and backend sides.</p>
+            <p class="text-muted">This means any tool, library, or application that speaks one of these protocols can connect to MindRouter &mdash; and MindRouter can route to any backend inference engine, regardless of its native API. The result: maximum flexibility for your code on the front end, and maximum choice of cutting-edge inference engines on the back end.</p>
+            <ul class="list-unstyled text-muted">
+                <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i><strong>OpenAI-compatible</strong> &mdash; drop-in for any OpenAI SDK or tool</li>
+                <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i><strong>Ollama-compatible</strong> &mdash; works with Ollama clients and libraries</li>
+                <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i><strong>Anthropic-compatible</strong> &mdash; supports Claude SDK and tooling</li>
+                <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i><strong>vLLM &amp; Ollama backends</strong> &mdash; route to any engine transparently</li>
+                <li class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i><strong>Dozens of models</strong> &mdash; deploy and serve cutting-edge models instantly</li>
+            </ul>
+        </div>
+        <div class="col-lg-6">
+            <!-- Translation architecture diagram -->
+            <div class="rounded-3 shadow-lg overflow-hidden" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border:1px solid #2a2a4a; padding:2rem;">
+                <div class="text-center mb-3" style="font-size:0.7rem; text-transform:uppercase; letter-spacing:2px; color:#6c7086;">Translation Architecture</div>
+                <!-- Client protocols -->
+                <div class="d-flex justify-content-center gap-2 mb-3">
+                    <div class="rounded-2 px-3 py-2 text-center" style="background:rgba(100,255,218,0.08); border:1px solid rgba(100,255,218,0.25); min-width:90px;">
+                        <div style="font-size:1.2rem; color:#64ffda;"><i class="bi bi-braces"></i></div>
+                        <div style="font-size:0.72rem; color:#64ffda; font-weight:600;">OpenAI</div>
+                        <div style="font-size:0.65rem; color:#5a6380;">Client SDK</div>
+                    </div>
+                    <div class="rounded-2 px-3 py-2 text-center" style="background:rgba(130,170,255,0.08); border:1px solid rgba(130,170,255,0.25); min-width:90px;">
+                        <div style="font-size:1.2rem; color:#82aaff;"><i class="bi bi-box"></i></div>
+                        <div style="font-size:0.72rem; color:#82aaff; font-weight:600;">Ollama</div>
+                        <div style="font-size:0.65rem; color:#5a6380;">Client SDK</div>
+                    </div>
+                    <div class="rounded-2 px-3 py-2 text-center" style="background:rgba(247,181,126,0.08); border:1px solid rgba(247,181,126,0.25); min-width:90px;">
+                        <div style="font-size:1.2rem; color:#f7b57e;"><i class="bi bi-chat-square-text"></i></div>
+                        <div style="font-size:0.72rem; color:#f7b57e; font-weight:600;">Anthropic</div>
+                        <div style="font-size:0.65rem; color:#5a6380;">Client SDK</div>
+                    </div>
+                </div>
+                <!-- Arrows down -->
+                <div class="text-center mb-2" style="color:#3a4060; font-size:1.2rem;">
+                    <i class="bi bi-chevron-down"></i> <i class="bi bi-chevron-down"></i> <i class="bi bi-chevron-down"></i>
+                </div>
+                <!-- MindRouter translation hub -->
+                <div class="rounded-3 mx-auto px-4 py-3 text-center mb-2" style="background: linear-gradient(135deg, rgba(100,255,218,0.12) 0%, rgba(130,170,255,0.12) 100%); border:1px solid rgba(100,255,218,0.3); max-width:280px;">
+                    <div style="font-size:0.65rem; text-transform:uppercase; letter-spacing:1.5px; color:#5a6380;">Canonical Schema</div>
+                    <div style="font-size:1.1rem; font-weight:700; color:#64ffda;"><i class="bi bi-arrow-left-right"></i> MindRouter</div>
+                    <div style="font-size:0.7rem; color:#8892b0;">Translate &middot; Route &middot; Balance</div>
+                </div>
+                <!-- Arrows down -->
+                <div class="text-center mb-2" style="color:#3a4060; font-size:1.2rem;">
+                    <i class="bi bi-chevron-down"></i> <i class="bi bi-chevron-down"></i> <i class="bi bi-chevron-down"></i>
+                </div>
+                <!-- Backend engines -->
+                <div class="d-flex justify-content-center gap-2">
+                    <div class="rounded-2 px-3 py-2 text-center" style="background:rgba(166,227,161,0.08); border:1px solid rgba(166,227,161,0.25); min-width:120px;">
+                        <div style="font-size:1.2rem; color:#a6e3a1;"><i class="bi bi-lightning-charge"></i></div>
+                        <div style="font-size:0.72rem; color:#a6e3a1; font-weight:600;">vLLM</div>
+                        <div style="font-size:0.65rem; color:#5a6380;">High-throughput</div>
+                    </div>
+                    <div class="rounded-2 px-3 py-2 text-center" style="background:rgba(130,170,255,0.08); border:1px solid rgba(130,170,255,0.25); min-width:120px;">
+                        <div style="font-size:1.2rem; color:#82aaff;"><i class="bi bi-box"></i></div>
+                        <div style="font-size:0.72rem; color:#82aaff; font-weight:600;">Ollama</div>
+                        <div style="font-size:0.65rem; color:#5a6380;">Flexible serving</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Feature 6: Docs & Blog ── -->
     <div class="row align-items-center mb-5 g-4">
         <div class="col-lg-6">
             <span class="badge bg-danger bg-opacity-10 text-danger mb-2 px-3 py-2" style="font-size:0.8rem;"><i class="bi bi-book"></i> Documentation &amp; Blog</span>
@@ -408,7 +476,124 @@ response = client.chat.completions.create(
         </div>
     </div>
 
-    <!-- ── Feature 6: Infrastructure ── -->
+    <!-- ── Feature 7: Institutional AI Sovereignty ── -->
+    <div class="row mb-5">
+        <div class="col-12">
+            <div class="rounded-3 shadow-lg overflow-hidden" style="background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%); border:1px solid rgba(255,255,255,0.08);">
+                <div class="row g-0 align-items-center">
+                    <div class="col-lg-7 p-4 p-lg-5">
+                        <span class="badge mb-3 px-3 py-2" style="font-size:0.8rem; background:rgba(255,215,0,0.15); color:#ffd700; border:1px solid rgba(255,215,0,0.3);"><i class="bi bi-shield-lock-fill"></i> Institutional AI Sovereignty</span>
+                        <h3 class="fw-bold text-white mt-2" style="font-size:1.6rem;">Your AI. Your Hardware. Your Control.</h3>
+                        <p style="color:rgba(255,255,255,0.75); font-size:0.95rem; line-height:1.7;">Every model served by MindRouter runs on <strong style="color:#fff;">University-owned and University-managed GPUs</strong>. No data leaves institutional infrastructure. No third-party cloud providers process your prompts. No external APIs see your research, coursework, or sensitive data.</p>
+                        <p style="color:rgba(255,255,255,0.65); font-size:0.88rem; line-height:1.7;">This isn't just a cost decision &mdash; it's a strategic one. Institutional AI sovereignty means the University maintains full control over which models are deployed, how they behave, and where data flows. It means predictable costs, observable performance, and the freedom to run open-weight models without license restrictions or vendor lock-in.</p>
+                        <div class="row g-3 mt-3">
+                            <div class="col-sm-6">
+                                <div class="d-flex align-items-start">
+                                    <i class="bi bi-shield-lock text-warning me-2 mt-1" style="font-size:1.1rem;"></i>
+                                    <div>
+                                        <div class="fw-semibold text-white" style="font-size:0.85rem;">Data Security</div>
+                                        <div style="color:rgba(255,255,255,0.55); font-size:0.78rem;">Prompts and responses never leave University infrastructure. Full FERPA and research data compliance.</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-sm-6">
+                                <div class="d-flex align-items-start">
+                                    <i class="bi bi-speedometer text-info me-2 mt-1" style="font-size:1.1rem;"></i>
+                                    <div>
+                                        <div class="fw-semibold text-white" style="font-size:0.85rem;">Speed &amp; Latency</div>
+                                        <div style="color:rgba(255,255,255,0.55); font-size:0.78rem;">On-premise GPUs eliminate network round-trips to distant cloud regions. Lower latency, faster throughput.</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-sm-6">
+                                <div class="d-flex align-items-start">
+                                    <i class="bi bi-lightning-charge text-success me-2 mt-1" style="font-size:1.1rem;"></i>
+                                    <div>
+                                        <div class="fw-semibold text-white" style="font-size:0.85rem;">Power &amp; Sustainability</div>
+                                        <div style="color:rgba(255,255,255,0.55); font-size:0.78rem;">Direct visibility into energy consumption per model and per request. Optimize workloads for efficiency.</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-sm-6">
+                                <div class="d-flex align-items-start">
+                                    <i class="bi bi-sliders text-danger me-2 mt-1" style="font-size:1.1rem;"></i>
+                                    <div>
+                                        <div class="fw-semibold text-white" style="font-size:0.85rem;">Model Control</div>
+                                        <div style="color:rgba(255,255,255,0.55); font-size:0.78rem;">Choose exactly which models to deploy, audit their behavior, and update on your own schedule. No vendor lock-in.</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-sm-6">
+                                <div class="d-flex align-items-start">
+                                    <i class="bi bi-bar-chart text-primary me-2 mt-1" style="font-size:1.1rem;"></i>
+                                    <div>
+                                        <div class="fw-semibold text-white" style="font-size:0.85rem;">Full Observability</div>
+                                        <div style="color:rgba(255,255,255,0.55); font-size:0.78rem;">Complete audit trail of every request. GPU metrics, token usage, and cost accounting &mdash; all visible to administrators.</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-sm-6">
+                                <div class="d-flex align-items-start">
+                                    <i class="bi bi-currency-dollar me-2 mt-1" style="font-size:1.1rem; color:#a6e3a1;"></i>
+                                    <div>
+                                        <div class="fw-semibold text-white" style="font-size:0.85rem;">Predictable Costs</div>
+                                        <div style="color:rgba(255,255,255,0.55); font-size:0.78rem;">No per-token API bills or surprise invoices. Capital investment in GPUs with transparent, fixed operating costs.</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-5 p-4 p-lg-5 text-center d-none d-lg-block">
+                        <!-- GPU rack illustration -->
+                        <div style="position:relative;">
+                            <div class="rounded-3 p-4" style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06);">
+                                <div style="font-size:0.65rem; text-transform:uppercase; letter-spacing:2px; color:rgba(255,255,255,0.3); margin-bottom:1rem;">University GPU Cluster</div>
+                                <div class="d-flex flex-column gap-2">
+                                    <div class="d-flex align-items-center rounded-2 px-3 py-2" style="background:rgba(100,255,218,0.06); border:1px solid rgba(100,255,218,0.15);">
+                                        <i class="bi bi-gpu-card me-2" style="color:#64ffda;"></i>
+                                        <div class="text-start flex-grow-1">
+                                            <div style="font-size:0.75rem; color:#64ffda; font-weight:600;">Node 1</div>
+                                            <div style="font-size:0.65rem; color:#5a6380;">4x GPU &middot; gpt-oss-120b</div>
+                                        </div>
+                                        <span class="badge rounded-pill" style="background:rgba(100,255,218,0.2); color:#64ffda; font-size:0.6rem;">ACTIVE</span>
+                                    </div>
+                                    <div class="d-flex align-items-center rounded-2 px-3 py-2" style="background:rgba(130,170,255,0.06); border:1px solid rgba(130,170,255,0.15);">
+                                        <i class="bi bi-gpu-card me-2" style="color:#82aaff;"></i>
+                                        <div class="text-start flex-grow-1">
+                                            <div style="font-size:0.75rem; color:#82aaff; font-weight:600;">Node 2</div>
+                                            <div style="font-size:0.65rem; color:#5a6380;">4x GPU TP &middot; qwen3.5-400b</div>
+                                        </div>
+                                        <span class="badge rounded-pill" style="background:rgba(130,170,255,0.2); color:#82aaff; font-size:0.6rem;">ACTIVE</span>
+                                    </div>
+                                    <div class="d-flex align-items-center rounded-2 px-3 py-2" style="background:rgba(166,227,161,0.06); border:1px solid rgba(166,227,161,0.15);">
+                                        <i class="bi bi-gpu-card me-2" style="color:#a6e3a1;"></i>
+                                        <div class="text-start flex-grow-1">
+                                            <div style="font-size:0.75rem; color:#a6e3a1; font-weight:600;">Node 3</div>
+                                            <div style="font-size:0.65rem; color:#5a6380;">4x GPU &middot; gpt-oss-120b / 20b</div>
+                                        </div>
+                                        <span class="badge rounded-pill" style="background:rgba(166,227,161,0.2); color:#a6e3a1; font-size:0.6rem;">ACTIVE</span>
+                                    </div>
+                                    <div class="d-flex align-items-center rounded-2 px-3 py-2" style="background:rgba(247,181,126,0.06); border:1px solid rgba(247,181,126,0.15);">
+                                        <i class="bi bi-gpu-card me-2" style="color:#f7b57e;"></i>
+                                        <div class="text-start flex-grow-1">
+                                            <div style="font-size:0.75rem; color:#f7b57e; font-weight:600;">Node 4</div>
+                                            <div style="font-size:0.65rem; color:#5a6380;">2x GPU &middot; Multimodal OCR</div>
+                                        </div>
+                                        <span class="badge rounded-pill" style="background:rgba(247,181,126,0.2); color:#f7b57e; font-size:0.6rem;">ACTIVE</span>
+                                    </div>
+                                </div>
+                                <div class="mt-3" style="font-size:0.65rem; color:rgba(255,255,255,0.25);">
+                                    <i class="bi bi-lock-fill"></i> On-premise &middot; No cloud dependencies &middot; Full institutional control
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Feature 8: Infrastructure ── -->
     <div class="row align-items-center g-4">
         <div class="col-lg-12">
             <div class="text-center mb-4">
