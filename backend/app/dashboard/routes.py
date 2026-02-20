@@ -26,8 +26,11 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Stre
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from itsdangerous import URLSafeTimedSerializer
+
 from backend.app.core.scheduler.policy import get_scheduler
 from backend.app.core.telemetry.registry import get_registry
+from backend.app.dashboard.azure_auth import azure_router
 from backend.app.db import crud, chat_crud
 from backend.app.db.models import BackendEngine, QuotaRequestStatus, UserRole
 from backend.app.db.session import get_async_db
@@ -35,6 +38,7 @@ from backend.app.security import generate_api_key, hash_password, verify_passwor
 from backend.app.settings import get_settings
 
 dashboard_router = APIRouter(tags=["dashboard"])
+dashboard_router.include_router(azure_router)
 
 # Setup templates
 templates_path = os.path.join(os.path.dirname(__file__), "templates")
@@ -42,25 +46,33 @@ templates = Jinja2Templates(directory=templates_path)
 templates.env.filters["fromjson"] = lambda s: json.loads(s) if s else []
 
 
-# Session management helpers
+# Session management helpers using signed cookies
+def _get_session_serializer() -> URLSafeTimedSerializer:
+    """Get a timed serializer for session cookies."""
+    settings = get_settings()
+    return URLSafeTimedSerializer(settings.secret_key, salt="session")
+
+
 def get_session_user_id(request: Request) -> Optional[int]:
-    """Get user ID from session cookie."""
+    """Get user ID from signed session cookie."""
     session_data = request.cookies.get("mindrouter_session")
     if session_data:
         try:
-            # Simple session: just store user_id
-            # In production, use signed cookies or JWT
-            return int(session_data)
-        except (ValueError, TypeError):
+            serializer = _get_session_serializer()
+            user_id = serializer.loads(session_data, max_age=86400 * 7)  # 7 days
+            return int(user_id)
+        except Exception:
             pass
     return None
 
 
 def set_session_cookie(response: Response, user_id: int) -> None:
-    """Set session cookie."""
+    """Set signed session cookie."""
+    serializer = _get_session_serializer()
+    signed_value = serializer.dumps(user_id)
     response.set_cookie(
         key="mindrouter_session",
-        value=str(user_id),
+        value=signed_value,
         httponly=True,
         samesite="lax",
         max_age=86400 * 7,  # 7 days
@@ -143,48 +155,18 @@ async def documentation(
     )
 
 
-@dashboard_router.get("/request-api-key", response_class=HTMLResponse)
-async def request_api_key_form(request: Request):
-    """Display API key request form."""
-    return templates.TemplateResponse(
-        "public/request_api_key.html",
-        {"request": request, "submitted": False},
-    )
-
-
-@dashboard_router.post("/request-api-key", response_class=HTMLResponse)
-async def submit_api_key_request(
-    request: Request,
-    name: str = Form(...),
-    email: str = Form(...),
-    affiliation: str = Form(...),
-    use_case: str = Form(...),
-    db: AsyncSession = Depends(get_async_db),
-):
-    """Submit API key request."""
-    await crud.create_quota_request(
-        db=db,
-        request_type="api_key",
-        justification=use_case,
-        requester_name=name,
-        requester_email=email,
-        affiliation=affiliation,
-    )
-    await db.commit()
-
-    return templates.TemplateResponse(
-        "public/request_api_key.html",
-        {"request": request, "submitted": True},
-    )
-
-
 # Authentication
 @dashboard_router.get("/login", response_class=HTMLResponse)
 async def login_form(request: Request, error: Optional[str] = None):
     """Display login form."""
+    settings = get_settings()
     return templates.TemplateResponse(
         "public/login.html",
-        {"request": request, "error": error},
+        {
+            "request": request,
+            "error": error,
+            "azure_enabled": settings.azure_ad_enabled,
+        },
     )
 
 
@@ -196,18 +178,47 @@ async def login(
     db: AsyncSession = Depends(get_async_db),
 ):
     """Handle login."""
+    settings = get_settings()
     user = await crud.get_user_by_username(db, username)
 
-    if not user or not verify_password(password, user.password_hash):
+    if not user:
         return templates.TemplateResponse(
             "public/login.html",
-            {"request": request, "error": "Invalid username or password"},
+            {
+                "request": request,
+                "error": "Invalid username or password",
+                "azure_enabled": settings.azure_ad_enabled,
+            },
+        )
+
+    if user.password_hash is None:
+        return templates.TemplateResponse(
+            "public/login.html",
+            {
+                "request": request,
+                "error": "Please use University of Idaho sign-in",
+                "azure_enabled": settings.azure_ad_enabled,
+            },
+        )
+
+    if not verify_password(password, user.password_hash):
+        return templates.TemplateResponse(
+            "public/login.html",
+            {
+                "request": request,
+                "error": "Invalid username or password",
+                "azure_enabled": settings.azure_ad_enabled,
+            },
         )
 
     if not user.is_active:
         return templates.TemplateResponse(
             "public/login.html",
-            {"request": request, "error": "Account is inactive"},
+            {
+                "request": request,
+                "error": "Account is inactive",
+                "azure_enabled": settings.azure_ad_enabled,
+            },
         )
 
     # Update last login

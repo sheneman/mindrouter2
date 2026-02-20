@@ -77,6 +77,13 @@ class Settings(BaseSettings):
     session_cookie_samesite: str = "lax"
     api_key_hash_algorithm: str = "argon2"
 
+    # Azure AD SSO
+    azure_ad_client_id: Optional[str] = None
+    azure_ad_client_secret: Optional[str] = None
+    azure_ad_tenant_id: Optional[str] = None
+    azure_ad_redirect_uri: str = "https://mindrouter.uidaho.edu/login/azure/authorized"
+    azure_ad_default_group: str = "other"
+
     # Artifact Storage
     artifact_storage_path: str = "/data/artifacts"
     artifact_max_size_mb: int = 50
@@ -192,6 +199,11 @@ class Settings(BaseSettings):
             except json.JSONDecodeError:
                 return [origin.strip() for origin in v.split(",")]
         return v
+
+    @property
+    def azure_ad_enabled(self) -> bool:
+        """Check if Azure AD SSO is configured."""
+        return bool(self.azure_ad_client_id and self.azure_ad_tenant_id)
 
     def get_quota_defaults(self, role: str) -> dict:
         """Get default quota settings for a role."""

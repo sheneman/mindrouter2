@@ -162,8 +162,18 @@ async def get_user_by_username(db: AsyncSession, username: str) -> Optional[User
 
 
 async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
-    """Get user by email."""
-    result = await db.execute(select(User).where(User.email == email))
+    """Get user by email with group eagerly loaded."""
+    result = await db.execute(
+        select(User).options(selectinload(User.group)).where(User.email == email)
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_user_by_azure_oid(db: AsyncSession, azure_oid: str) -> Optional[User]:
+    """Get user by Azure AD object ID with group eagerly loaded."""
+    result = await db.execute(
+        select(User).options(selectinload(User.group)).where(User.azure_oid == azure_oid)
+    )
     return result.scalar_one_or_none()
 
 
@@ -171,7 +181,7 @@ async def create_user(
     db: AsyncSession,
     username: str,
     email: str,
-    password_hash: str,
+    password_hash: Optional[str] = None,
     role: UserRole = UserRole.STUDENT,
     full_name: Optional[str] = None,
     group_id: Optional[int] = None,

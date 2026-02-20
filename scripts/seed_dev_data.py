@@ -79,30 +79,6 @@ async def seed_users():
                 "group_name": "admin",
                 "full_name": "Administrator",
             },
-            {
-                "username": "faculty1",
-                "email": "faculty1@mindrouter.local",
-                "password": "faculty123",
-                "role": UserRole.FACULTY,
-                "group_name": "faculty",
-                "full_name": "Faculty User",
-            },
-            {
-                "username": "staff1",
-                "email": "staff1@mindrouter.local",
-                "password": "staff123",
-                "role": UserRole.STAFF,
-                "group_name": "staff",
-                "full_name": "Staff User",
-            },
-            {
-                "username": "student1",
-                "email": "student1@mindrouter.local",
-                "password": "student123",
-                "role": UserRole.STUDENT,
-                "group_name": "students",
-                "full_name": "Student User",
-            },
         ]
 
         for user_data in users_data:
@@ -168,9 +144,8 @@ async def main():
     print()
     print("Default credentials:")
     print("  admin / admin123")
-    print("  faculty1 / faculty123")
-    print("  staff1 / staff123")
-    print("  student1 / student123")
+    print()
+    print("Other users will be created via Azure AD SSO on first login.")
     print("=" * 60)
 
 

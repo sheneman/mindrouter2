@@ -135,7 +135,8 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     )
     username: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    azure_oid: Mapped[Optional[str]] = mapped_column(String(36), unique=True, nullable=True, index=True)
     full_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole, values_callable=_enum_values), nullable=False, default=UserRole.STUDENT
