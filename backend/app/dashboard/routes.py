@@ -18,6 +18,7 @@ import csv
 import io
 import json
 import os
+import zoneinfo
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -45,6 +46,33 @@ templates_path = os.path.join(os.path.dirname(__file__), "templates")
 templates = Jinja2Templates(directory=templates_path)
 templates.env.filters["fromjson"] = lambda s: json.loads(s) if s else []
 templates.env.globals["version"] = get_settings().app_version
+
+# ---------------------------------------------------------------------------
+# Timezone filter — converts UTC datetimes to the configured app timezone
+# ---------------------------------------------------------------------------
+_tz_cache = {"name": "America/Los_Angeles"}
+
+
+def _refresh_tz_cache_sync(tz_name: str) -> None:
+    """Update the cached timezone name (called after admin save)."""
+    _tz_cache["name"] = tz_name
+
+
+def localtime_filter(dt, fmt="%Y-%m-%d %H:%M"):
+    """Convert a UTC datetime to the configured timezone and format it."""
+    if dt is None:
+        return ""
+    tz_name = _tz_cache["name"]
+    try:
+        tz = zoneinfo.ZoneInfo(tz_name)
+    except Exception:
+        tz = zoneinfo.ZoneInfo("America/Los_Angeles")
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=zoneinfo.ZoneInfo("UTC"))
+    return dt.astimezone(tz).strftime(fmt)
+
+
+templates.env.filters["localtime"] = localtime_filter
 
 
 # Session management helpers using signed cookies
@@ -2117,3 +2145,121 @@ async def admin_chat_config_post(
         return RedirectResponse(url="/admin/chat-config?success=core_updated", status_code=302)
 
     return RedirectResponse(url="/admin/chat-config?error=Unknown+action", status_code=302)
+
+
+# ---------------------------------------------------------------------------
+# Admin Site Settings (timezone, etc.)
+# ---------------------------------------------------------------------------
+
+# Common timezone choices grouped by region
+_TIMEZONE_CHOICES = [
+    ("US", [
+        "America/New_York",
+        "America/Chicago",
+        "America/Denver",
+        "America/Los_Angeles",
+        "America/Anchorage",
+        "Pacific/Honolulu",
+    ]),
+    ("Americas", [
+        "America/Toronto",
+        "America/Vancouver",
+        "America/Mexico_City",
+        "America/Sao_Paulo",
+        "America/Argentina/Buenos_Aires",
+    ]),
+    ("Europe", [
+        "Europe/London",
+        "Europe/Paris",
+        "Europe/Berlin",
+        "Europe/Moscow",
+    ]),
+    ("Asia / Pacific", [
+        "Asia/Tokyo",
+        "Asia/Shanghai",
+        "Asia/Kolkata",
+        "Asia/Singapore",
+        "Australia/Sydney",
+        "Pacific/Auckland",
+    ]),
+    ("Other", [
+        "UTC",
+    ]),
+]
+
+
+@dashboard_router.get("/admin/settings", response_class=HTMLResponse)
+async def admin_settings(
+    request: Request,
+    success: Optional[str] = None,
+    error: Optional[str] = None,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Admin site settings page."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or (not user.group or not user.group.is_admin):
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    current_tz = await crud.get_config_json(db, "app.timezone", "America/Los_Angeles")
+
+    # Show current time in configured timezone as preview
+    now_in_tz = localtime_filter(datetime.now(timezone.utc), "%Y-%m-%d %H:%M:%S %Z")
+
+    return templates.TemplateResponse(
+        "admin/settings.html",
+        {
+            "request": request,
+            "user": user,
+            "current_timezone": current_tz,
+            "timezone_choices": _TIMEZONE_CHOICES,
+            "now_in_tz": now_in_tz,
+            "success": success,
+            "error": error,
+        },
+    )
+
+
+@dashboard_router.post("/admin/settings")
+async def admin_settings_post(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Handle site settings form submissions."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or (not user.group or not user.group.is_admin):
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    form = await request.form()
+    action = form.get("action")
+
+    if action == "set_timezone":
+        tz_name = form.get("timezone", "").strip()
+        # Validate timezone
+        try:
+            zoneinfo.ZoneInfo(tz_name)
+        except Exception:
+            return RedirectResponse(
+                url="/admin/settings?error=Invalid+timezone", status_code=302
+            )
+        await crud.set_config(
+            db, "app.timezone", tz_name, description="IANA timezone for displaying dates in the web UI"
+        )
+        await db.commit()
+        _refresh_tz_cache_sync(tz_name)
+        return RedirectResponse(url="/admin/settings?success=timezone_updated", status_code=302)
+
+    return RedirectResponse(url="/admin/settings?error=Unknown+action", status_code=302)
+
+
+async def _init_tz_cache(db: AsyncSession) -> None:
+    """Load timezone from DB into cache. Call at startup or first request."""
+    tz_name = await crud.get_config_json(db, "app.timezone", "America/Los_Angeles")
+    _refresh_tz_cache_sync(tz_name)

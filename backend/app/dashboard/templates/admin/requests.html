@@ -18,7 +18,7 @@
                         <strong>{{ req.requester_name or 'User #' ~ req.user_id }}</strong>
                         <span class="badge bg-info ms-2">{{ req.request_type }}</span>
                     </span>
-                    <span class="text-muted">{{ req.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                    <span class="text-muted">{{ req.created_at|localtime }}</span>
                 </div>
                 <div class="card-body">
                     <div class="row">

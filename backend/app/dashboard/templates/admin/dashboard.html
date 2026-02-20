@@ -109,7 +109,7 @@
                                                 </span>
                                             </td>
                                             <td>{{ backend.current_concurrent }} / {{ backend.max_concurrent }}</td>
-                                            <td>{{ backend.last_health_check.strftime('%H:%M:%S') if backend.last_health_check else 'Never' }}</td>
+                                            <td>{{ backend.last_health_check|localtime('%H:%M:%S') if backend.last_health_check else 'Never' }}</td>
                                         </tr>
                                         {% endfor %}
                                     </tbody>

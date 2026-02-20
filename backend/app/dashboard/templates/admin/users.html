@@ -75,8 +75,8 @@
                                             {{ 'Active' if u.is_active else 'Inactive' }}
                                         </span>
                                     </td>
-                                    <td>{{ u.created_at.strftime('%Y-%m-%d') }}</td>
-                                    <td>{{ u.last_login_at.strftime('%Y-%m-%d %H:%M') if u.last_login_at else 'Never' }}</td>
+                                    <td>{{ u.created_at|localtime('%Y-%m-%d') }}</td>
+                                    <td>{{ u.last_login_at|localtime if u.last_login_at else 'Never' }}</td>
                                     <td>
                                         <a href="/admin/users/{{ u.id }}" class="btn btn-sm btn-outline-primary">
                                             <i class="bi bi-eye"></i>

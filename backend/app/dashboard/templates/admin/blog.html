@@ -38,8 +38,8 @@
                                 <span class="badge bg-secondary">Draft</span>
                                 {% endif %}
                             </td>
-                            <td>{{ post.published_at.strftime('%Y-%m-%d') if post.published_at else '-' }}</td>
-                            <td>{{ post.created_at.strftime('%Y-%m-%d') }}</td>
+                            <td>{{ post.published_at|localtime('%Y-%m-%d') if post.published_at else '-' }}</td>
+                            <td>{{ post.created_at|localtime('%Y-%m-%d') }}</td>
                             <td>
                                 <a href="/admin/blog/{{ post.id }}/edit" class="btn btn-sm btn-outline-primary">Edit</a>
                                 <form method="post" action="/admin/blog/{{ post.id }}/publish" class="d-inline">

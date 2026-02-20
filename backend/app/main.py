@@ -87,6 +87,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     storage = get_artifact_storage()
     await storage.initialize()
 
+    # Initialize timezone cache from DB
+    from backend.app.db.session import AsyncSessionLocal
+    from backend.app.dashboard.routes import _init_tz_cache
+    async with AsyncSessionLocal() as db:
+        await _init_tz_cache(db)
+
     # Start background cleanup loop
     _cleanup_task = asyncio.create_task(_conversation_cleanup_loop())
 

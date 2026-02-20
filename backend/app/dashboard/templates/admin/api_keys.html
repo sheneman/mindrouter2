@@ -82,14 +82,14 @@
                                     </td>
                                     <td>
                                         {% if k.expires_at %}
-                                        {{ k.expires_at.strftime('%Y-%m-%d') }}
+                                        {{ k.expires_at|localtime('%Y-%m-%d') }}
                                         {% else %}
                                         <span class="text-muted">Never</span>
                                         {% endif %}
                                     </td>
-                                    <td>{{ k.last_used_at.strftime('%Y-%m-%d %H:%M') if k.last_used_at else 'Never' }}</td>
+                                    <td>{{ k.last_used_at|localtime if k.last_used_at else 'Never' }}</td>
                                     <td>{{ "{:,}".format(k.usage_count) }}</td>
-                                    <td>{{ k.created_at.strftime('%Y-%m-%d') }}</td>
+                                    <td>{{ k.created_at|localtime('%Y-%m-%d') }}</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>

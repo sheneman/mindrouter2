@@ -69,9 +69,9 @@
                                     </span>
                                 </dd>
                                 <dt class="col-sm-4">Created</dt>
-                                <dd class="col-sm-8">{{ detail_user.created_at.strftime('%Y-%m-%d %H:%M') }}</dd>
+                                <dd class="col-sm-8">{{ detail_user.created_at|localtime }}</dd>
                                 <dt class="col-sm-4">Last Login</dt>
-                                <dd class="col-sm-8">{{ detail_user.last_login_at.strftime('%Y-%m-%d %H:%M') if detail_user.last_login_at else 'Never' }}</dd>
+                                <dd class="col-sm-8">{{ detail_user.last_login_at|localtime if detail_user.last_login_at else 'Never' }}</dd>
                             </dl>
                         </div>
 
@@ -221,9 +221,9 @@
                                     <td><code>{{ k.key_prefix }}...</code></td>
                                     <td>{{ k.name }}</td>
                                     <td><span class="badge {% if k.status.value == 'active' %}bg-success{% else %}bg-secondary{% endif %}">{{ k.status.value }}</span></td>
-                                    <td>{{ k.last_used_at.strftime('%Y-%m-%d %H:%M') if k.last_used_at else 'Never' }}</td>
+                                    <td>{{ k.last_used_at|localtime if k.last_used_at else 'Never' }}</td>
                                     <td>{{ "{:,}".format(k.usage_count) }}</td>
-                                    <td>{{ k.created_at.strftime('%Y-%m-%d') }}</td>
+                                    <td>{{ k.created_at|localtime('%Y-%m-%d') }}</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>

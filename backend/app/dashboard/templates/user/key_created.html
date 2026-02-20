@@ -33,7 +33,7 @@
                     {% if expires_at %}
                     <div class="mb-4">
                         <label class="form-label">Expires</label>
-                        <p class="form-control-plaintext">{{ expires_at.strftime('%Y-%m-%d %H:%M UTC') }}</p>
+                        <p class="form-control-plaintext">{{ expires_at|localtime('%Y-%m-%d %H:%M %Z') }}</p>
                     </div>
                     {% endif %}
 

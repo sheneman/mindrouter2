@@ -84,7 +84,7 @@
                                 {% for req in audit_requests %}
                                 <tr>
                                     <td><code>{{ req.request_uuid[:8] }}...</code></td>
-                                    <td>{{ req.created_at.strftime('%m-%d %H:%M:%S') }}</td>
+                                    <td>{{ req.created_at|localtime('%m-%d %H:%M:%S') }}</td>
                                     <td><a href="/admin/users/{{ req.user_id }}">{{ req.user_id }}</a></td>
                                     <td><span class="badge bg-secondary">{{ req.model }}</span></td>
                                     <td>{{ req.endpoint }}</td>

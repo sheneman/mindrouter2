@@ -105,17 +105,17 @@
                                         {% if key.expires_at %}
                                         {% set days_left = ((key.expires_at.replace(tzinfo=None) - now_utc.replace(tzinfo=None)).days) %}
                                         {% if is_expired %}
-                                        <span class="text-danger">Expired {{ key.expires_at.strftime('%Y-%m-%d') }}</span>
+                                        <span class="text-danger">Expired {{ key.expires_at|localtime('%Y-%m-%d') }}</span>
                                         {% elif days_left <= 7 %}
-                                        <span class="text-warning">{{ key.expires_at.strftime('%Y-%m-%d') }} ({{ days_left }}d left)</span>
+                                        <span class="text-warning">{{ key.expires_at|localtime('%Y-%m-%d') }} ({{ days_left }}d left)</span>
                                         {% else %}
-                                        {{ key.expires_at.strftime('%Y-%m-%d') }} ({{ days_left }}d left)
+                                        {{ key.expires_at|localtime('%Y-%m-%d') }} ({{ days_left }}d left)
                                         {% endif %}
                                         {% else %}
                                         <span class="text-muted">Never</span>
                                         {% endif %}
                                     </td>
-                                    <td>{{ key.last_used_at.strftime('%Y-%m-%d %H:%M') if key.last_used_at else 'Never' }}</td>
+                                    <td>{{ key.last_used_at|localtime if key.last_used_at else 'Never' }}</td>
                                     <td>
                                         {% if key.status.value == 'active' and not is_expired %}
                                         <form method="POST" action="/dashboard/revoke-key/{{ key.id }}" style="display: inline;">
