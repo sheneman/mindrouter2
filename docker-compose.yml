@@ -6,7 +6,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=${DATABASE_URL:-mysql+pymysql://mindrouter:mindrouter_password@mariadb:3306/mindrouter}
+      - DATABASE_URL=mysql+pymysql://mindrouter:${MYSQL_PASSWORD:-mindrouter_password}@mariadb:3306/mindrouter
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
       - ARTIFACT_STORAGE_PATH=/data/artifacts
