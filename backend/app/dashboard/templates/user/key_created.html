@@ -22,13 +22,20 @@
                         <p class="form-control-plaintext">{{ key_name }}</p>
                     </div>
 
-                    <div class="mb-4">
+                    <div class="mb-3">
                         <label class="form-label">API Key</label>
                         <div class="api-key-display" id="apiKey">{{ api_key }}</div>
                         <button class="btn btn-outline-secondary btn-sm mt-2" onclick="copyToClipboard()">
                             <i class="bi bi-clipboard"></i> Copy to Clipboard
                         </button>
                     </div>
+
+                    {% if expires_at %}
+                    <div class="mb-4">
+                        <label class="form-label">Expires</label>
+                        <p class="form-control-plaintext">{{ expires_at.strftime('%Y-%m-%d %H:%M UTC') }}</p>
+                    </div>
+                    {% endif %}
 
                     <div class="text-center">
                         <a href="/dashboard" class="btn btn-primary">

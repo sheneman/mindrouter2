@@ -18,7 +18,7 @@ import csv
 import io
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, status
@@ -244,6 +244,7 @@ async def user_dashboard(
     request: Request,
     pw_error: Optional[str] = None,
     pw_success: Optional[str] = None,
+    key_error: Optional[str] = None,
     db: AsyncSession = Depends(get_async_db),
 ):
     """User dashboard."""
@@ -266,6 +267,10 @@ async def user_dashboard(
     if quota and quota.token_budget > 0:
         usage_percent = min(100, (quota.tokens_used / quota.token_budget) * 100)
 
+    # Key limit info
+    max_keys = user.group.max_api_keys if user.group else 8
+    active_key_count = await crud.count_user_active_api_keys(db, user_id)
+
     return templates.TemplateResponse(
         "user/dashboard.html",
         {
@@ -276,6 +281,10 @@ async def user_dashboard(
             "usage_percent": usage_percent,
             "pw_error": pw_error,
             "pw_success": pw_success,
+            "key_error": key_error,
+            "max_keys": max_keys,
+            "active_key_count": active_key_count,
+            "now_utc": datetime.now(timezone.utc),
         },
     )
 
@@ -326,6 +335,20 @@ async def create_api_key(
     if not user_id:
         return RedirectResponse(url="/login", status_code=302)
 
+    user = await crud.get_user_by_id(db, user_id)
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+
+    # Check key limit
+    max_keys = user.group.max_api_keys if user.group else 8
+    active_count = await crud.count_user_active_api_keys(db, user_id)
+    if active_count >= max_keys:
+        return RedirectResponse(url="/dashboard?key_error=limit", status_code=302)
+
+    # Calculate expiration from group settings
+    expiry_days = user.group.api_key_expiry_days if user.group else 45
+    expires_at = datetime.now(timezone.utc) + timedelta(days=expiry_days)
+
     # Generate new key
     full_key, key_hash, key_prefix = generate_api_key()
 
@@ -336,6 +359,7 @@ async def create_api_key(
         key_hash=key_hash,
         key_prefix=key_prefix,
         name=key_name,
+        expires_at=expires_at,
     )
     await db.commit()
 
@@ -346,6 +370,7 @@ async def create_api_key(
             "request": request,
             "api_key": full_key,
             "key_name": key_name,
+            "expires_at": expires_at,
         },
     )
 
@@ -1562,6 +1587,8 @@ async def create_group(
     max_concurrent: int = Form(2),
     scheduler_weight: int = Form(1),
     is_admin: Optional[str] = Form(None),
+    api_key_expiry_days: int = Form(45),
+    max_api_keys: int = Form(8),
     db: AsyncSession = Depends(get_async_db),
 ):
     """Create a new group."""
@@ -1588,6 +1615,8 @@ async def create_group(
             max_concurrent=max_concurrent,
             scheduler_weight=scheduler_weight,
             is_admin=(is_admin == "on"),
+            api_key_expiry_days=api_key_expiry_days,
+            max_api_keys=max_api_keys,
         )
         await db.commit()
         return RedirectResponse(url="/admin/groups?success=created", status_code=302)
@@ -1606,6 +1635,8 @@ async def edit_group(
     max_concurrent: int = Form(2),
     scheduler_weight: int = Form(1),
     is_admin: Optional[str] = Form(None),
+    api_key_expiry_days: int = Form(45),
+    max_api_keys: int = Form(8),
     db: AsyncSession = Depends(get_async_db),
 ):
     """Edit a group."""
@@ -1627,6 +1658,8 @@ async def edit_group(
             max_concurrent=max_concurrent,
             scheduler_weight=scheduler_weight,
             is_admin=(is_admin == "on"),
+            api_key_expiry_days=api_key_expiry_days,
+            max_api_keys=max_api_keys,
         )
         await db.commit()
         return RedirectResponse(url="/admin/groups?success=updated", status_code=302)
@@ -1790,6 +1823,7 @@ async def admin_api_keys(
             "total_pages": total_pages,
             "search": search or "",
             "key_status": key_status or "",
+            "now_utc": datetime.now(timezone.utc),
         },
     )
 

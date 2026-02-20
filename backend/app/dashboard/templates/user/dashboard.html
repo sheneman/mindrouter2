@@ -51,12 +51,21 @@
         <div class="col-md-8">
             <div class="card mb-4">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <span><i class="bi bi-key"></i> API Keys</span>
+                    <span><i class="bi bi-key"></i> API Keys <small class="text-muted">({{ active_key_count }}/{{ max_keys }})</small></span>
+                    {% if active_key_count < max_keys %}
                     <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createKeyModal">
                         <i class="bi bi-plus"></i> Create New Key
                     </button>
+                    {% else %}
+                    <span class="badge bg-warning text-dark">Key limit reached</span>
+                    {% endif %}
                 </div>
                 <div class="card-body">
+                    {% if key_error == 'limit' %}
+                    <div class="alert alert-warning" role="alert">
+                        You have reached the maximum of {{ max_keys }} active API keys. Revoke an existing key to create a new one.
+                    </div>
+                    {% endif %}
                     {% if api_keys %}
                     <div class="table-responsive">
                         <table class="table table-hover">
@@ -66,23 +75,45 @@
                                     <th scope="col">Name</th>
                                     <th scope="col">Key Prefix</th>
                                     <th scope="col">Status</th>
+                                    <th scope="col">Expires</th>
                                     <th scope="col">Last Used</th>
                                     <th scope="col">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for key in api_keys %}
-                                <tr>
+                                {% set is_expired = key.expires_at and key.expires_at.replace(tzinfo=None) < now_utc.replace(tzinfo=None) %}
+                                <tr{% if is_expired %} class="table-warning"{% endif %}>
                                     <td>{{ key.name }}</td>
                                     <td><code>{{ key.key_prefix }}...</code></td>
                                     <td>
-                                        <span class="badge {% if key.status.value == 'active' %}bg-success{% else %}bg-secondary{% endif %}">
-                                            {{ key.status.value }}
-                                        </span>
+                                        {% if is_expired %}
+                                        <span class="badge bg-warning text-dark">expired</span>
+                                        {% elif key.status.value == 'active' %}
+                                        <span class="badge bg-success">active</span>
+                                        {% elif key.status.value == 'revoked' %}
+                                        <span class="badge bg-secondary">revoked</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">{{ key.status.value }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if key.expires_at %}
+                                        {% set days_left = ((key.expires_at.replace(tzinfo=None) - now_utc.replace(tzinfo=None)).days) %}
+                                        {% if is_expired %}
+                                        <span class="text-danger">Expired {{ key.expires_at.strftime('%Y-%m-%d') }}</span>
+                                        {% elif days_left <= 7 %}
+                                        <span class="text-warning">{{ key.expires_at.strftime('%Y-%m-%d') }} ({{ days_left }}d left)</span>
+                                        {% else %}
+                                        {{ key.expires_at.strftime('%Y-%m-%d') }} ({{ days_left }}d left)
+                                        {% endif %}
+                                        {% else %}
+                                        <span class="text-muted">Never</span>
+                                        {% endif %}
                                     </td>
                                     <td>{{ key.last_used_at.strftime('%Y-%m-%d %H:%M') if key.last_used_at else 'Never' }}</td>
                                     <td>
-                                        {% if key.status.value == 'active' %}
+                                        {% if key.status.value == 'active' and not is_expired %}
                                         <form method="POST" action="/dashboard/revoke-key/{{ key.id }}" style="display: inline;">
                                             <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Are you sure you want to revoke this key?')">
                                                 Revoke

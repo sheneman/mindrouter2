@@ -51,6 +51,7 @@
                                     <th scope="col">Name</th>
                                     <th scope="col">User</th>
                                     <th scope="col">Status</th>
+                                    <th scope="col">Expires</th>
                                     <th scope="col">Last Used</th>
                                     <th scope="col">Usage</th>
                                     <th scope="col">Created</th>
@@ -69,9 +70,22 @@
                                         {% endif %}
                                     </td>
                                     <td>
-                                        <span class="badge {% if k.status.value == 'active' %}bg-success{% elif k.status.value == 'revoked' %}bg-danger{% else %}bg-secondary{% endif %}">
-                                            {{ k.status.value }}
-                                        </span>
+                                        {% if k.expires_at and k.expires_at.replace(tzinfo=None) < now_utc.replace(tzinfo=None) %}
+                                        <span class="badge bg-warning text-dark">expired</span>
+                                        {% elif k.status.value == 'active' %}
+                                        <span class="badge bg-success">active</span>
+                                        {% elif k.status.value == 'revoked' %}
+                                        <span class="badge bg-danger">revoked</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">{{ k.status.value }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if k.expires_at %}
+                                        {{ k.expires_at.strftime('%Y-%m-%d') }}
+                                        {% else %}
+                                        <span class="text-muted">Never</span>
+                                        {% endif %}
                                     </td>
                                     <td>{{ k.last_used_at.strftime('%Y-%m-%d %H:%M') if k.last_used_at else 'Never' }}</td>
                                     <td>{{ "{:,}".format(k.usage_count) }}</td>

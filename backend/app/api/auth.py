@@ -21,11 +21,14 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from itsdangerous import URLSafeTimedSerializer
+
 from backend.app.db import crud
 from backend.app.db.models import ApiKey, ApiKeyStatus, User, UserRole, Group
 from backend.app.db.session import get_async_db
 from backend.app.security.api_keys import verify_api_key
 from backend.app.logging_config import get_logger
+from backend.app.settings import get_settings
 
 logger = get_logger(__name__)
 
@@ -214,15 +217,17 @@ def require_admin_or_session():
                 detail="Invalid API key or insufficient permissions",
             )
 
-        # Fallback to session cookie
+        # Fallback to session cookie (signed with itsdangerous)
         session_data = request.cookies.get("mindrouter_session")
         if session_data:
             try:
-                user_id = int(session_data)
+                settings = get_settings()
+                serializer = URLSafeTimedSerializer(settings.secret_key, salt="session")
+                user_id = int(serializer.loads(session_data, max_age=86400 * 7))
                 user = await crud.get_user_by_id(db, user_id)
                 if user and user.is_active and user.group and user.group.is_admin:
                     return user
-            except (ValueError, TypeError):
+            except Exception:
                 pass
 
         raise HTTPException(

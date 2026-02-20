@@ -67,6 +67,8 @@ async def create_group(
     max_concurrent: int = 2,
     scheduler_weight: int = 1,
     is_admin: bool = False,
+    api_key_expiry_days: int = 45,
+    max_api_keys: int = 8,
 ) -> Group:
     """Create a new group."""
     group = Group(
@@ -78,6 +80,8 @@ async def create_group(
         max_concurrent=max_concurrent,
         scheduler_weight=scheduler_weight,
         is_admin=is_admin,
+        api_key_expiry_days=api_key_expiry_days,
+        max_api_keys=max_api_keys,
     )
     db.add(group)
     await db.flush()
@@ -1648,6 +1652,33 @@ async def delete_old_gpu_telemetry(
     )
     await db.flush()
     return result.rowcount
+
+
+async def delete_expired_api_keys(
+    db: AsyncSession, grace_days: int = 15
+) -> int:
+    """Delete API keys that have been expired for more than grace_days."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=grace_days)
+    result = await db.execute(
+        delete(ApiKey).where(
+            ApiKey.expires_at.isnot(None),
+            ApiKey.expires_at < cutoff,
+            ApiKey.status.in_([ApiKeyStatus.ACTIVE, ApiKeyStatus.EXPIRED]),
+        )
+    )
+    await db.flush()
+    return result.rowcount
+
+
+async def count_user_active_api_keys(db: AsyncSession, user_id: int) -> int:
+    """Count active (non-revoked) API keys for a user."""
+    result = await db.execute(
+        select(func.count(ApiKey.id)).where(
+            ApiKey.user_id == user_id,
+            ApiKey.status == ApiKeyStatus.ACTIVE,
+        )
+    )
+    return result.scalar() or 0
 
 
 # Quota Request CRUD

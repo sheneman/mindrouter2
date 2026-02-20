@@ -1190,7 +1190,7 @@ class BackendRegistry:
                 logger.error("telemetry_cleanup_error", error=str(e))
 
     async def _cleanup_old_telemetry(self) -> None:
-        """Delete telemetry data older than retention period."""
+        """Delete telemetry data older than retention period and expired API keys."""
         cutoff = datetime.now(timezone.utc) - timedelta(
             days=self._settings.telemetry_retention_days
         )
@@ -1198,6 +1198,10 @@ class BackendRegistry:
         async with get_async_db_context() as db:
             deleted_bt = await crud.delete_old_telemetry(db, older_than=cutoff)
             deleted_gdt = await crud.delete_old_gpu_telemetry(db, older_than=cutoff)
+            deleted_keys = await crud.delete_expired_api_keys(db, grace_days=15)
+
+        if deleted_keys:
+            logger.info("expired_api_keys_cleaned_up", deleted=deleted_keys)
 
         if deleted_bt or deleted_gdt:
             logger.info(

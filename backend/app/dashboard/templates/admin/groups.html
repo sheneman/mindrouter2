@@ -55,6 +55,10 @@
                                 <dd class="col-6">{{ group.max_concurrent }}</dd>
                                 <dt class="col-6">Sched. Weight</dt>
                                 <dd class="col-6">{{ group.scheduler_weight }}</dd>
+                                <dt class="col-6">Key Expiry</dt>
+                                <dd class="col-6">{{ group.api_key_expiry_days }} days</dd>
+                                <dt class="col-6">Max API Keys</dt>
+                                <dd class="col-6">{{ group.max_api_keys }}</dd>
                             </dl>
                         </div>
                         <div class="card-footer d-flex justify-content-between">
@@ -102,6 +106,14 @@
                                         <div class="col-6 mb-2">
                                             <label class="form-label small">Sched. Weight</label>
                                             <input type="number" class="form-control form-control-sm" name="scheduler_weight" value="{{ group.scheduler_weight }}">
+                                        </div>
+                                        <div class="col-6 mb-2">
+                                            <label class="form-label small">Key Expiry (days)</label>
+                                            <input type="number" class="form-control form-control-sm" name="api_key_expiry_days" value="{{ group.api_key_expiry_days }}">
+                                        </div>
+                                        <div class="col-6 mb-2">
+                                            <label class="form-label small">Max API Keys</label>
+                                            <input type="number" class="form-control form-control-sm" name="max_api_keys" value="{{ group.max_api_keys }}">
                                         </div>
                                     </div>
                                     <div class="form-check mb-2">
@@ -158,6 +170,14 @@
                         <div class="col-6 mb-3">
                             <label for="scheduler_weight" class="form-label">Scheduler Weight</label>
                             <input type="number" class="form-control" id="scheduler_weight" name="scheduler_weight" value="1">
+                        </div>
+                        <div class="col-6 mb-3">
+                            <label for="api_key_expiry_days" class="form-label">Key Expiry (days)</label>
+                            <input type="number" class="form-control" id="api_key_expiry_days" name="api_key_expiry_days" value="45">
+                        </div>
+                        <div class="col-6 mb-3">
+                            <label for="max_api_keys" class="form-label">Max API Keys</label>
+                            <input type="number" class="form-control" id="max_api_keys" name="max_api_keys" value="8">
                         </div>
                     </div>
                     <div class="form-check">

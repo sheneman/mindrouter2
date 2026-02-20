@@ -118,6 +118,8 @@ class Group(Base, TimestampMixin):
     max_concurrent: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
     scheduler_weight: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    api_key_expiry_days: Mapped[int] = mapped_column(Integer, nullable=False, default=45)
+    max_api_keys: Mapped[int] = mapped_column(Integer, nullable=False, default=8)
 
     # Relationships
     users: Mapped[List["User"]] = relationship("User", back_populates="group")
