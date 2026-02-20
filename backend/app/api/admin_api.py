@@ -827,13 +827,6 @@ async def review_quota_request(
             detail="Quota request not found",
         )
 
-    # If approved and it's a quota increase, update user's quota
-    if review.approved and quota_request.user_id and review.granted_tokens:
-        quota = await crud.get_user_quota(db, quota_request.user_id)
-        if quota:
-            quota.token_budget = review.granted_tokens
-            await db.flush()
-
     logger.info(
         "quota_request_reviewed",
         admin_id=admin.id,
@@ -935,7 +928,6 @@ async def create_user(
     await crud.create_quota(
         db,
         user_id=user.id,
-        token_budget=group.token_budget,
         rpm_limit=group.rpm_limit,
         max_concurrent=group.max_concurrent,
     )
@@ -1093,7 +1085,7 @@ async def get_user_detail(
             "api_key_count": stats["api_key_count"],
         },
         "quota": {
-            "token_budget": stats["quota"].token_budget,
+            "token_budget": stats["user"].group.token_budget if stats["user"].group else 0,
             "tokens_used": stats["quota"].tokens_used,
             "rpm_limit": stats["quota"].rpm_limit,
             "max_concurrent": stats["quota"].max_concurrent,

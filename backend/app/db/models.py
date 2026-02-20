@@ -210,8 +210,7 @@ class Quota(Base, TimestampMixin):
         Integer, ForeignKey("users.id"), unique=True, nullable=False
     )
 
-    # Token budget
-    token_budget: Mapped[int] = mapped_column(BigInteger, nullable=False, default=100000)
+    # Token usage (budget comes from user's group)
     tokens_used: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     budget_period_start: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

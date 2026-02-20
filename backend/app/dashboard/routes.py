@@ -262,10 +262,11 @@ async def user_dashboard(
     # Get quota
     quota = await crud.get_user_quota(db, user_id)
 
-    # Calculate quota usage percentage
+    # Calculate quota usage percentage using group budget
+    group_budget = user.group.token_budget if user.group else 0
     usage_percent = 0
-    if quota and quota.token_budget > 0:
-        usage_percent = min(100, (quota.tokens_used / quota.token_budget) * 100)
+    if quota and group_budget > 0:
+        usage_percent = min(100, (quota.tokens_used / group_budget) * 100)
 
     # Key limit info
     max_keys = user.group.max_api_keys if user.group else 8
@@ -278,6 +279,7 @@ async def user_dashboard(
             "user": user,
             "api_keys": api_keys,
             "quota": quota,
+            "group_budget": group_budget,
             "usage_percent": usage_percent,
             "pw_error": pw_error,
             "pw_success": pw_success,
@@ -1742,7 +1744,6 @@ async def edit_user(
     college: Optional[str] = Form(None),
     department: Optional[str] = Form(None),
     intended_use: Optional[str] = Form(None),
-    token_budget: Optional[int] = Form(None),
     rpm_limit: Optional[int] = Form(None),
     max_concurrent: Optional[int] = Form(None),
     weight_override: Optional[str] = Form(None),
@@ -1771,8 +1772,6 @@ async def edit_user(
         # Update quota if provided
         quota = await crud.get_user_quota(db, user_id)
         if quota:
-            if token_budget is not None:
-                quota.token_budget = token_budget
             if rpm_limit is not None:
                 quota.rpm_limit = rpm_limit
             if max_concurrent is not None:

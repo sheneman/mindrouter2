@@ -270,7 +270,6 @@ def mock_quota():
     quota = MagicMock(spec=Quota)
     quota.id = 1
     quota.user_id = 1
-    quota.token_budget = 1000000
     quota.tokens_used = 0
     quota.budget_period_start = datetime.now(timezone.utc)
     quota.budget_period_days = 30

@@ -296,7 +296,6 @@ async def find_or_create_azure_user(db: AsyncSession, profile: dict):
         await crud.create_quota(
             db=db,
             user_id=user.id,
-            token_budget=group.token_budget,
             rpm_limit=group.rpm_limit,
             max_concurrent=group.max_concurrent,
         )

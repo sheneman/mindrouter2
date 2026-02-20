@@ -357,7 +357,8 @@ class InferenceService:
         await crud.reset_quota_if_needed(self.db, user.id)
 
         quota = await crud.get_user_quota(self.db, user.id)
-        if quota and quota.token_budget > 0 and quota.tokens_used >= quota.token_budget:
+        group_budget = user.group.token_budget if user.group else 0
+        if quota and group_budget > 0 and quota.tokens_used >= group_budget:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Token quota exceeded",

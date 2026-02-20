@@ -28,73 +28,69 @@ class TestQuotaModel:
         """Test quota model creation with defaults."""
         quota = Quota(
             user_id=1,
-            token_budget=100000,
             tokens_used=0,
         )
 
         assert quota.user_id == 1
-        assert quota.token_budget == 100000
         assert quota.tokens_used == 0
 
     def test_quota_with_custom_limits(self):
         """Test quota with custom RPM and concurrent limits."""
         quota = Quota(
             user_id=1,
-            token_budget=500000,
             rpm_limit=60,
             max_concurrent=5,
         )
 
-        assert quota.token_budget == 500000
         assert quota.rpm_limit == 60
         assert quota.max_concurrent == 5
 
 
 class TestQuotaAccounting:
-    """Tests for quota accounting logic."""
+    """Tests for quota accounting logic (budget comes from group)."""
 
     def test_tokens_remaining(self):
-        """Test calculating remaining tokens."""
+        """Test calculating remaining tokens against group budget."""
+        group_budget = 100000
         quota = Quota(
             user_id=1,
-            token_budget=100000,
             tokens_used=25000,
         )
 
-        remaining = quota.token_budget - quota.tokens_used
+        remaining = group_budget - quota.tokens_used
         assert remaining == 75000
 
     def test_budget_exhausted(self):
         """Test detecting exhausted budget."""
+        group_budget = 100000
         quota = Quota(
             user_id=1,
-            token_budget=100000,
             tokens_used=100000,
         )
 
-        is_exhausted = quota.tokens_used >= quota.token_budget
+        is_exhausted = quota.tokens_used >= group_budget
         assert is_exhausted is True
 
     def test_budget_overage(self):
         """Test handling overage (used more than budget)."""
+        group_budget = 100000
         quota = Quota(
             user_id=1,
-            token_budget=100000,
             tokens_used=150000,  # Over budget
         )
 
-        overage = quota.tokens_used - quota.token_budget
+        overage = quota.tokens_used - group_budget
         assert overage == 50000
 
     def test_percentage_used(self):
         """Test calculating percentage of budget used."""
+        group_budget = 100000
         quota = Quota(
             user_id=1,
-            token_budget=100000,
             tokens_used=75000,
         )
 
-        percentage = (quota.tokens_used / quota.token_budget) * 100
+        percentage = (quota.tokens_used / group_budget) * 100
         assert percentage == 75.0
 
 
@@ -106,7 +102,6 @@ class TestQuotaPeriod:
         now = datetime.now(timezone.utc)
         quota = Quota(
             user_id=1,
-            token_budget=100000,
             budget_period_start=now,
             budget_period_days=30,
         )
@@ -120,7 +115,6 @@ class TestQuotaPeriod:
         past = datetime.now(timezone.utc) - timedelta(days=45)
         quota = Quota(
             user_id=1,
-            token_budget=100000,
             budget_period_start=past,
             budget_period_days=30,
         )
@@ -135,7 +129,6 @@ class TestQuotaPeriod:
         now = datetime.now(timezone.utc)
         quota = Quota(
             user_id=1,
-            token_budget=100000,
             budget_period_start=now - timedelta(days=10),
             budget_period_days=30,
         )
@@ -316,31 +309,43 @@ class TestGroupLimits:
 
 
 class TestQuotaCheckLogic:
-    """Tests for quota check logic."""
+    """Tests for quota check logic (budget from group)."""
 
     def test_check_token_budget_ok(self):
         """Test token budget check passes when sufficient."""
+        group_budget = 100000
         quota = Quota(
             user_id=1,
-            token_budget=100000,
             tokens_used=50000,
         )
 
         estimated_tokens = 1000
-        has_budget = (quota.tokens_used + estimated_tokens) <= quota.token_budget
+        has_budget = (quota.tokens_used + estimated_tokens) <= group_budget
         assert has_budget is True
 
     def test_check_token_budget_exceeded(self):
         """Test token budget check fails when exceeded."""
+        group_budget = 100000
         quota = Quota(
             user_id=1,
-            token_budget=100000,
             tokens_used=99500,
         )
 
         estimated_tokens = 1000
-        has_budget = (quota.tokens_used + estimated_tokens) <= quota.token_budget
+        has_budget = (quota.tokens_used + estimated_tokens) <= group_budget
         assert has_budget is False
+
+    def test_unlimited_group_never_blocks(self):
+        """Test that unlimited group (budget=0) never blocks requests."""
+        group_budget = 0  # unlimited
+        quota = Quota(
+            user_id=1,
+            tokens_used=999999999,
+        )
+
+        # With budget=0, the check should be skipped (budget > 0 is false)
+        should_block = group_budget > 0 and quota.tokens_used >= group_budget
+        assert should_block is False
 
     def test_check_concurrent_limit_ok(self):
         """Test concurrent request check passes."""
@@ -468,7 +473,6 @@ class TestQuotaResetLogic:
         past = datetime.now(timezone.utc) - timedelta(days=45)
         quota = Quota(
             user_id=1,
-            token_budget=100000,
             tokens_used=50000,
             budget_period_start=past,
             budget_period_days=30,
@@ -484,7 +488,6 @@ class TestQuotaResetLogic:
         """Test that reset clears token usage."""
         quota = Quota(
             user_id=1,
-            token_budget=100000,
             tokens_used=75000,
         )
 
@@ -499,7 +502,6 @@ class TestQuotaResetLogic:
         now = datetime.now(timezone.utc)
         quota = Quota(
             user_id=1,
-            token_budget=100000,
             tokens_used=50000,
             budget_period_start=now - timedelta(days=15),  # 15 days ago
             budget_period_days=30,

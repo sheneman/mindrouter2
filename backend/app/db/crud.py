@@ -131,8 +131,6 @@ async def update_group(db: AsyncSession, group_id: int, **kwargs) -> Optional[Gr
 
     # Propagate quota-related fields to existing user quotas
     quota_fields = {}
-    if "token_budget" in kwargs:
-        quota_fields["token_budget"] = kwargs["token_budget"]
     if "rpm_limit" in kwargs:
         quota_fields["rpm_limit"] = kwargs["rpm_limit"]
     if "max_concurrent" in kwargs:
@@ -422,14 +420,12 @@ async def get_user_quota(db: AsyncSession, user_id: int) -> Optional[Quota]:
 async def create_quota(
     db: AsyncSession,
     user_id: int,
-    token_budget: int,
     rpm_limit: int,
     max_concurrent: int,
 ) -> Quota:
     """Create quota for a user."""
     quota = Quota(
         user_id=user_id,
-        token_budget=token_budget,
         rpm_limit=rpm_limit,
         max_concurrent=max_concurrent,
     )

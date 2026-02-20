@@ -108,14 +108,6 @@
                                     <h6>Quota Overrides</h6>
                                     <div class="row">
                                         <div class="col-md-6 mb-3">
-                                            <label for="token_budget" class="form-label">Token Budget</label>
-                                            <div class="form-check mb-1">
-                                                <input class="form-check-input" type="checkbox" id="unlimited_user" {% if stats.quota.token_budget == 0 %}checked{% endif %} onchange="var inp=document.getElementById('token_budget'); if(this.checked){inp.dataset.prevValue=inp.value;inp.value=0;inp.disabled=true;}else{inp.disabled=false;inp.value=inp.dataset.prevValue||100000;}">
-                                                <label class="form-check-label" for="unlimited_user">Unlimited</label>
-                                            </div>
-                                            <input type="number" class="form-control" id="token_budget" name="token_budget" value="{{ stats.quota.token_budget }}" {% if stats.quota.token_budget == 0 %}disabled{% endif %}>
-                                        </div>
-                                        <div class="col-md-6 mb-3">
                                             <label for="rpm_limit" class="form-label">RPM Limit</label>
                                             <input type="number" class="form-control" id="rpm_limit" name="rpm_limit" value="{{ stats.quota.rpm_limit }}">
                                         </div>
@@ -168,10 +160,11 @@
                                 <div class="card-body">
                                     <h2 class="card-subtitle h6 mb-2 text-muted">Quota Used</h2>
                                     {% if stats.quota %}
-                                    {% if stats.quota.token_budget == 0 %}
+                                    {% set grp_budget = detail_user.group.token_budget if detail_user.group else 0 %}
+                                    {% if grp_budget == 0 %}
                                     <p class="card-title h3 mb-1"><span class="badge bg-info">Unlimited</span></p>
                                     {% else %}
-                                    {% set usage_pct = (stats.quota.tokens_used / stats.quota.token_budget * 100) if stats.quota.token_budget > 0 else 0 %}
+                                    {% set usage_pct = (stats.quota.tokens_used / grp_budget * 100) if grp_budget > 0 else 0 %}
                                     <p class="card-title h3 mb-1">{{ "%.0f"|format(usage_pct) }}%</p>
                                     <div class="progress" style="height: 6px;">
                                         <div class="progress-bar {% if usage_pct >= 90 %}bg-danger{% elif usage_pct >= 70 %}bg-warning{% else %}bg-success{% endif %}" role="progressbar" style="width: {{ usage_pct }}%" aria-valuenow="{{ usage_pct }}" aria-valuemin="0" aria-valuemax="100" aria-label="Quota usage"></div>
@@ -258,20 +251,6 @@
 
 {% block extra_js %}
 <script>
-// Re-enable disabled token_budget input on form submit so value is sent
-var unlimitedCb = document.getElementById('unlimited_user');
-if (unlimitedCb) {
-    var form = unlimitedCb.closest('form');
-    if (form) {
-        form.addEventListener('submit', function() {
-            var inp = document.getElementById('token_budget');
-            if (unlimitedCb.checked) {
-                inp.disabled = false;
-                inp.value = 0;
-            }
-        });
-    }
-}
 </script>
 {% if monthly_usage %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
