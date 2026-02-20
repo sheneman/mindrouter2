@@ -242,9 +242,16 @@ class VLLMAdapter:
                     continue
 
                 # Determine capabilities from model name
+                model_lower = model_id.lower()
                 supports_multimodal = any(
-                    x in model_id.lower()
+                    x in model_lower
                     for x in ["llava", "vision", "vl", "multimodal"]
+                )
+
+                # Auto-detect thinking support for known model families
+                supports_thinking = any(
+                    x in model_lower
+                    for x in ["qwen3", "gpt-oss", "deepseek-r1"]
                 )
 
                 # Try to extract parameter count
@@ -263,6 +270,7 @@ class VLLMAdapter:
                         parameter_count=param_count,
                         context_length=context_length,
                         supports_multimodal=supports_multimodal,
+                        supports_thinking=supports_thinking,
                         supports_structured_output=True,
                         is_loaded=True,  # vLLM models are always loaded
                     )
