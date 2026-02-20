@@ -124,6 +124,14 @@ class InferenceService:
                 request, job, user, proxy_fn="_proxy_chat_request"
             )
 
+            # When thinking was not requested, merge reasoning into content
+            thinking_requested = request.think is True or request.reasoning_effort is not None
+            if not thinking_requested:
+                for choice in response.choices:
+                    if choice.message.reasoning and not choice.message.content:
+                        choice.message.content = choice.message.reasoning
+                        choice.message.reasoning = None
+
             # Update records
             await self._complete_request(
                 db_request, backend.id, response, job
@@ -167,10 +175,21 @@ class InferenceService:
             routed_backend = None
             last_finish_reason = None
 
+            # When thinking was not requested, merge any reasoning deltas
+            # into content so the response isn't trapped in the thinking block.
+            # Some models (e.g. qwen3.5) produce reasoning_content by default.
+            thinking_requested = request.think is True or request.reasoning_effort is not None
+
             async for chunk, backend in self._proxy_stream_with_retry(
                 request, job, user, proxy_fn="_proxy_stream_request"
             ):
                 routed_backend = backend
+
+                if not thinking_requested:
+                    for choice in chunk.choices:
+                        if choice.delta.reasoning and not choice.delta.content:
+                            choice.delta.content = choice.delta.reasoning
+                            choice.delta.reasoning = None
 
                 # Format as SSE (exclude_none to avoid tool_calls:null in chunks)
                 yield f"data: {chunk.model_dump_json(exclude_none=True)}\n\n".encode()
