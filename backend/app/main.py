@@ -27,6 +27,7 @@ from fastapi.staticfiles import StaticFiles
 from backend.app.api import api_router
 from backend.app.core.scheduler.policy import init_scheduler, shutdown_scheduler
 from backend.app.core.telemetry.registry import init_registry, shutdown_registry
+from backend.app.dashboard.blog import blog_router
 from backend.app.dashboard.chat import chat_router
 from backend.app.dashboard.routes import dashboard_router
 from backend.app.logging_config import (
@@ -187,6 +188,7 @@ def create_app() -> FastAPI:
     app.include_router(api_router)
     app.include_router(dashboard_router)
     app.include_router(chat_router)
+    app.include_router(blog_router)
 
     # Mount static files for dashboard
     import os

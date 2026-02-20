@@ -781,3 +781,22 @@ class ChatAttachment(Base, TimestampMixin):
         Index("ix_chat_attachments_message", "message_id"),
         Index("ix_chat_attachments_user_created", "user_id", "created_at"),
     )
+
+
+# Blog Models
+class BlogPost(Base, TimestampMixin, SoftDeleteMixin):
+    """Blog post model."""
+
+    __tablename__ = "blog_posts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    slug: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    excerpt: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    author_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    is_published: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Relationships
+    author: Mapped["User"] = relationship("User")

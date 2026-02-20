@@ -29,6 +29,7 @@ from backend.app.db.models import (
     BackendEngine,
     BackendStatus,
     BackendTelemetry,
+    BlogPost,
     GPUDevice,
     GPUDeviceTelemetry,
     Group,
@@ -1956,3 +1957,118 @@ async def update_user(db: AsyncSession, user_id: int, **kwargs) -> Optional[User
             setattr(user, key, value)
     await db.flush()
     return user
+
+
+# Blog CRUD
+async def get_published_blog_posts(db: AsyncSession) -> List[BlogPost]:
+    """Get published blog posts ordered by published_at desc."""
+    result = await db.execute(
+        select(BlogPost)
+        .options(selectinload(BlogPost.author))
+        .where(
+            and_(
+                BlogPost.is_published.is_(True),
+                BlogPost.deleted_at.is_(None),
+            )
+        )
+        .order_by(BlogPost.published_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def get_blog_post_by_slug(db: AsyncSession, slug: str) -> Optional[BlogPost]:
+    """Get a single published blog post by slug."""
+    result = await db.execute(
+        select(BlogPost)
+        .options(selectinload(BlogPost.author))
+        .where(
+            and_(
+                BlogPost.slug == slug,
+                BlogPost.is_published.is_(True),
+                BlogPost.deleted_at.is_(None),
+            )
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_all_blog_posts(db: AsyncSession) -> List[BlogPost]:
+    """Get all blog posts including drafts (admin)."""
+    result = await db.execute(
+        select(BlogPost)
+        .options(selectinload(BlogPost.author))
+        .where(BlogPost.deleted_at.is_(None))
+        .order_by(BlogPost.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def get_blog_post_by_id(db: AsyncSession, post_id: int) -> Optional[BlogPost]:
+    """Get a blog post by ID (admin)."""
+    result = await db.execute(
+        select(BlogPost)
+        .options(selectinload(BlogPost.author))
+        .where(
+            and_(
+                BlogPost.id == post_id,
+                BlogPost.deleted_at.is_(None),
+            )
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def create_blog_post(
+    db: AsyncSession,
+    title: str,
+    slug: str,
+    content: str,
+    excerpt: Optional[str],
+    author_id: int,
+    is_published: bool = False,
+) -> BlogPost:
+    """Create a new blog post."""
+    post = BlogPost(
+        title=title,
+        slug=slug,
+        content=content,
+        excerpt=excerpt,
+        author_id=author_id,
+        is_published=is_published,
+        published_at=datetime.now(timezone.utc) if is_published else None,
+    )
+    db.add(post)
+    await db.flush()
+    return post
+
+
+async def update_blog_post(db: AsyncSession, post_id: int, **kwargs) -> Optional[BlogPost]:
+    """Update a blog post's fields."""
+    result = await db.execute(
+        select(BlogPost).where(
+            and_(BlogPost.id == post_id, BlogPost.deleted_at.is_(None))
+        )
+    )
+    post = result.scalar_one_or_none()
+    if not post:
+        return None
+    for key, value in kwargs.items():
+        if hasattr(post, key):
+            setattr(post, key, value)
+    await db.flush()
+    return post
+
+
+async def delete_blog_post(db: AsyncSession, post_id: int) -> bool:
+    """Soft delete a blog post."""
+    result = await db.execute(
+        select(BlogPost).where(
+            and_(BlogPost.id == post_id, BlogPost.deleted_at.is_(None))
+        )
+    )
+    post = result.scalar_one_or_none()
+    if post:
+        post.deleted_at = datetime.now(timezone.utc)
+        await db.flush()
+        return True
+    return False
