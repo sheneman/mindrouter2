@@ -128,6 +128,22 @@ async def update_group(db: AsyncSession, group_id: int, **kwargs) -> Optional[Gr
         if hasattr(group, key):
             setattr(group, key, value)
     await db.flush()
+
+    # Propagate quota-related fields to existing user quotas
+    quota_fields = {}
+    if "token_budget" in kwargs:
+        quota_fields["token_budget"] = kwargs["token_budget"]
+    if "rpm_limit" in kwargs:
+        quota_fields["rpm_limit"] = kwargs["rpm_limit"]
+    if "max_concurrent" in kwargs:
+        quota_fields["max_concurrent"] = kwargs["max_concurrent"]
+    if quota_fields:
+        user_ids = select(User.id).where(User.group_id == group_id)
+        await db.execute(
+            update(Quota).where(Quota.user_id.in_(user_ids)).values(**quota_fields)
+        )
+        await db.flush()
+
     return group
 
 
