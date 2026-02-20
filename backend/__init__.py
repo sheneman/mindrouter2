@@ -14,4 +14,4 @@
 
 """MindRouter2 - LLM Inference Load Balancer."""
 
-__version__ = "0.15.0"
+__version__ = "0.16.0"
