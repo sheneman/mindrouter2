@@ -801,6 +801,50 @@
     }
 
     // -----------------------------------------------------------------------
+    // Phase 0a: Strip $ from inside sub/superscripts
+    // e.g. _{$\infty$} → _{\infty}, ^{$n$} → ^{n}
+    // -----------------------------------------------------------------------
+    function stripDollarsInSubscripts(text) {
+        let prev;
+        do {
+            prev = text;
+            text = text.replace(/([_^])\{\$([^$]*)\$\}/g, '$1{$2}');
+        } while (text !== prev);
+        return text;
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 0b: Detect lines that are primarily math equations with
+    // fragmented $…$ delimiters, strip all $ and wrap in $$…$$
+    // -----------------------------------------------------------------------
+    function wrapMathLines(text) {
+        return text.split('\n').map(function(line) {
+            const trimmed = line.trim();
+            if (!trimmed) return line;
+            // Skip already-delimited display math or code fences
+            if (/^\$\$/.test(trimmed) || /^\\\[/.test(trimmed) || /^```/.test(trimmed)) return line;
+
+            // Count indicators
+            const dollarPairs = (trimmed.match(/\$[^$]+\$/g) || []).length;
+            const backslashCmds = (trimmed.match(/\\[a-zA-Z]+/g) || []).length;
+
+            // Need multiple fragments to consider consolidation
+            if (dollarPairs < 2 && backslashCmds < 2) return line;
+
+            // Check for prose: words of 4+ letters not part of LaTeX commands
+            const stripped = trimmed.replace(/\\[a-zA-Z]+/g, '').replace(/\$[^$]*\$/g, ' ');
+            const proseWords = stripped.match(/[a-zA-Z]{4,}/g) || [];
+            // If line has significant prose, don't consolidate
+            if (proseWords.length >= 2) return line;
+
+            // This looks like a math-heavy line — strip all $ and wrap in $$
+            const content = trimmed.replace(/\$/g, '');
+            const indent = line.match(/^(\s*)/)[1];
+            return indent + '$$' + content + '$$';
+        }).join('\n');
+    }
+
+    // -----------------------------------------------------------------------
     // Phase 1: Bare LaTeX commands with {…} arguments (e.g. \frac{a}{b})
     // -----------------------------------------------------------------------
     const BARE_LATEX_RE = /\\(boxed|text|textbf|textit|mathbf|mathit|mathrm|mathcal|mathbb|mathsf|boldsymbol|operatorname|frac|dfrac|tfrac|binom|sqrt|hat|bar|vec|dot|ddot|tilde|widetilde|widehat|overline|underline|overbrace|underbrace)\{/;
@@ -845,7 +889,9 @@
             end = consumeSubSuperscripts(text, end);
 
             result += text.slice(i, cmdStart);
-            result += '$' + text.slice(cmdStart, end) + '$';
+            // Strip inner $ from content (e.g. \int_{-$\infty$} → \int_{-\infty})
+            const inner = text.slice(cmdStart, end).replace(/\$/g, '');
+            result += '$' + inner + '$';
             i = end;
         }
         return result;
@@ -857,7 +903,7 @@
     // -----------------------------------------------------------------------
     const BARE_OP_RE = /\\(lim|sum|int|iint|iiint|oint|prod|coprod|bigcup|bigcap|bigvee|bigwedge|sup|inf|max|min|log|ln|sin|cos|tan|sec|csc|cot|sinh|cosh|tanh|arcsin|arccos|arctan|det|gcd|deg|dim|ker|exp|arg|hom|Pr|to|gets|mapsto|implies|iff|infty|pm|mp|times|div|cdot|cdots|ldots|ddots|vdots|star|circ|bullet|oplus|otimes|dagger|approx|equiv|cong|sim|simeq|neq|ne|leq|le|geq|ge|ll|gg|prec|succ|subset|supset|subseteq|supseteq|in|notin|ni|forall|exists|nexists|nabla|partial|ell|Re|Im|wp|aleph|emptyset|varnothing|neg|lnot|land|lor|cup|cap|setminus|triangle|angle|perp|parallel|mid|nmid|vdash|models|therefore|because|alpha|beta|gamma|delta|epsilon|varepsilon|zeta|eta|theta|vartheta|iota|kappa|lambda|mu|nu|xi|pi|varpi|rho|varrho|sigma|varsigma|tau|upsilon|phi|varphi|chi|psi|omega|Gamma|Delta|Theta|Lambda|Xi|Pi|Sigma|Upsilon|Phi|Psi|Omega)\b/;
 
-    // Consume _{…} and ^{…} (or single-char _x ^2) after position `end`
+    // Consume _{…} and ^{…} (or _$…$ ^$…$ or single-char _x ^2) after position `end`
     function consumeSubSuperscripts(text, end) {
         let consumed = true;
         while (consumed && end < text.length) {
@@ -866,6 +912,10 @@
                 if (text[end + 1] === '{') {
                     const braceEnd = matchBraces(text, end + 1);
                     if (braceEnd !== -1) { end = braceEnd; consumed = true; }
+                } else if (text[end + 1] === '$') {
+                    // Dollar-delimited: ^$\infty$ or _$n$
+                    const dollarEnd = text.indexOf('$', end + 2);
+                    if (dollarEnd !== -1) { end = dollarEnd + 1; consumed = true; }
                 } else {
                     end += 2; // single char: ^n, _i
                     consumed = true;
@@ -895,7 +945,9 @@
             end = consumeSubSuperscripts(text, end);
 
             result += text.slice(i, cmdStart);
-            result += '$' + text.slice(cmdStart, end) + '$';
+            // Strip inner $ from content (e.g. \int_{-$\infty$} → \int_{-\infty})
+            const inner = text.slice(cmdStart, end).replace(/\$/g, '');
+            result += '$' + inner + '$';
             i = end;
         }
         return result;
@@ -906,8 +958,9 @@
     // Models often wrap just the function name in $ but leave args outside
     // -----------------------------------------------------------------------
     function extendFuncArgs(text) {
-        // Match $...\func$ followed by (args) — handles one level of nested parens
-        const RE = /\$([^$]*\\(?:sin|cos|tan|sec|csc|cot|sinh|cosh|tanh|arcsin|arccos|arctan|log|ln|exp|det|gcd|deg|dim|ker|arg|hom|Pr|max|min|sup|inf|lim)\b[^$]*)\$\s*(\([^()]*(?:\([^()]*\)[^()]*)*\))/g;
+        // Match $...\command...$ followed by (args) — any LaTeX command, not just trig/log
+        // Handles one level of nested parens
+        const RE = /\$([^$]*\\[a-zA-Z]+(?:\{[^}]*\})*[^$]*)\$\s*(\([^()]*(?:\([^()]*\)[^()]*)*\))/g;
         return text.replace(RE, function(_match, inner, args) {
             return '$' + inner + args + '$';
         });
@@ -921,7 +974,7 @@
     // -----------------------------------------------------------------------
     function mergeAdjacentMath(text) {
         // Allow gaps up to 25 chars on the same line between $…$ blocks
-        const RE = /\$([^$]+)\$([^\n$]{1,25}?)\$([^$]+)\$/g;
+        const RE = /\$([^$]+)\$([^\n$]{0,25}?)\$([^$]+)\$/g;
         let prev;
         do {
             prev = text;
@@ -952,6 +1005,10 @@
             return token;
         }
 
+        // Phase 0a: strip $ from inside sub/superscripts
+        text = stripDollarsInSubscripts(text);
+        // Phase 0b: detect math-heavy lines and consolidate fragmented $
+        text = wrapMathLines(text);
         // Phase 1: wrap bare \command{…} (frac, boxed, text, etc.)
         text = wrapBareLatex(text);
         // Phase 2: wrap bare \operators and \symbols (lim, sum, sin, alpha, etc.)
