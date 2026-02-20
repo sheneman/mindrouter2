@@ -13,6 +13,9 @@ services:
       - CHAT_FILES_PATH=/data/chat_files
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - DEBUG=${DEBUG:-false}
+      - AZURE_AD_CLIENT_ID=${AZURE_AD_CLIENT_ID:-}
+      - AZURE_AD_CLIENT_SECRET=${AZURE_AD_CLIENT_SECRET:-}
+      - AZURE_AD_TENANT_ID=${AZURE_AD_TENANT_ID:-}
     volumes:
       - artifact_data:/data/artifacts
       - chat_data:/data/chat_files
