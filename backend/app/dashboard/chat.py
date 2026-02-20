@@ -28,6 +28,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.canonical_schemas import CanonicalModelInfo
+from backend.app.core.latex_normalize import normalize_latex
 from backend.app.core.telemetry.registry import get_registry
 from backend.app.core.translators.openai_in import OpenAIInTranslator
 from backend.app.db import crud
@@ -806,6 +807,26 @@ async def chat_completions(
     # Build OpenAI messages array from DB records
     api_messages = _build_llm_messages(messages, model_supports_multimodal=model_supports_multimodal)
 
+    # Inject system prompt for consistent math formatting
+    # (prepend so it appears before conversation history)
+    _MATH_SYSTEM_PROMPT = (
+        "When writing mathematical expressions, always use LaTeX with proper "
+        "delimiters. Use $...$ for inline math and $$...$$ for display equations. "
+        "Never leave LaTeX commands like \\frac, \\int, \\sum, \\alpha, etc. "
+        "bare without dollar-sign delimiters. Always wrap complete expressions, "
+        "not individual symbols — write $\\frac{a}{b} + c$ not $\\frac{a}{b}$ + c."
+    )
+    # Only add if there is no user-supplied system message already
+    has_system = any(m.get("role") == "system" for m in api_messages)
+    if not has_system:
+        api_messages.insert(0, {"role": "system", "content": _MATH_SYSTEM_PROMPT})
+    else:
+        # Append math instructions to the existing system message
+        for m in api_messages:
+            if m.get("role") == "system":
+                m["content"] = m["content"] + "\n\n" + _MATH_SYSTEM_PROMPT
+                break
+
     # Build canonical request
     try:
         request_data = {
@@ -874,7 +895,7 @@ async def chat_completions(
                 if full_content:
                     try:
                         await asyncio.shield(_save_assistant_message(
-                            conversation_id, full_content
+                            conversation_id, normalize_latex(full_content)
                         ))
                     except asyncio.CancelledError:
                         pass
@@ -905,6 +926,9 @@ async def chat_completions(
                 pass
 
             if assistant_content:
+                # Normalize LaTeX before saving and returning
+                assistant_content = normalize_latex(assistant_content)
+                result["choices"][0]["message"]["content"] = assistant_content
                 await chat_crud.create_message(db, conversation_id, "assistant", assistant_content)
                 await db.commit()
 
