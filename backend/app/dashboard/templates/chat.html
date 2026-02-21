@@ -126,6 +126,13 @@
     }
     .message-user .role-label { color: #0d6efd; }
     .message-assistant .role-label { color: #198754; }
+    .model-tag {
+        display: block;
+        font-size: 0.72rem;
+        color: #888;
+        margin-top: -0.2rem;
+        margin-bottom: 0.25rem;
+    }
     .message-content {
         font-size: 0.95rem;
         line-height: 1.6;
@@ -265,13 +272,17 @@
 
     /* Input area */
     .chat-input-area {
-        border-top: 1px solid #dee2e6;
-        padding: 0.75rem 1rem;
-        background: #fff;
+        padding: 0.75rem 1rem 1.25rem;
+        background: transparent;
     }
     .chat-input-wrapper {
         max-width: 800px;
         margin: 0 auto;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 1rem;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        padding: 0.6rem 0.75rem;
     }
     .file-preview-area {
         display: flex;
@@ -421,18 +432,21 @@
     .chat-input-row textarea {
         flex: 1;
         resize: none;
-        min-height: 44px;
+        min-height: 3.2rem;
         max-height: 200px;
-        border-radius: 1.5rem;
-        padding: 0.6rem 1rem;
+        border-radius: 0.75rem;
+        padding: 0.5rem 0.75rem;
         font-size: 0.95rem;
-        border: 1px solid #ccc;
+        border: 1px solid #e0e0e0;
+        background: #f9f9fb;
         overflow-y: auto;
+        line-height: 1.5;
     }
     .chat-input-row textarea:focus {
         outline: none;
         border-color: #0d6efd;
-        box-shadow: 0 0 0 0.15rem rgba(13,110,253,.15);
+        box-shadow: none;
+        background: #fff;
     }
     .input-actions {
         display: flex;
@@ -573,9 +587,12 @@
         .chat-sidebar.collapsed { width: 0; }
         .sidebar-header { padding: 0.5rem; gap: 0.35rem; }
         .chat-header select { max-width: 180px; }
-        .chat-header { padding: 0.5rem 0.5rem; gap: 0.5rem; }
-        .message { padding: 0.5rem 0.75rem; }
-        .chat-input-area { padding: 0.5rem; }
+        .chat-header { padding: 0.4rem 0.5rem; gap: 0.4rem; }
+        .chat-main { max-width: 100vw; overflow-x: hidden; }
+        .message { padding: 0.5rem 0.6rem; }
+        .chat-input-area { padding: 0.4rem 0.5rem 0.75rem; }
+        .chat-input-wrapper { padding: 0.5rem; border-radius: 0.75rem; }
+        .chat-input-row textarea { min-height: 2.8rem; font-size: 0.9rem; }
         .attached-file-thumb { max-width: 160px; }
         .attached-file-thumb img { width: 140px; }
         .attached-file-thumb .thumb-label { max-width: 140px; }
@@ -615,7 +632,7 @@
             </select>
             <div class="form-check form-check-inline ms-2" id="advancedToggleWrap" style="display:none;">
                 <input class="form-check-input" type="checkbox" id="showAdvancedModels">
-                <label class="form-check-label small text-muted" for="showAdvancedModels">Advanced</label>
+                <label class="form-check-label small text-muted" for="showAdvancedModels">More models</label>
             </div>
             <div class="thinking-controls" id="thinkingControls" style="display:none;">
                 <div class="form-check form-switch d-inline-flex align-items-center me-2" id="thinkingToggleWrap">
@@ -664,7 +681,7 @@
                         <i class="bi bi-paperclip" aria-hidden="true"></i>
                     </button>
                     <label for="chatInput" class="sr-only">Chat message</label>
-                    <textarea id="chatInput" rows="1"
+                    <textarea id="chatInput" rows="2"
                               placeholder="Type a message... (Shift+Enter for new line)"
                               aria-label="Chat message"
                               autofocus></textarea>
@@ -928,6 +945,7 @@
             if (!res.ok) throw new Error('Not found');
             const data = await res.json();
 
+            _currentConvModel = data.model || '';
             if (data.model && modelSelect.querySelector(`option[value="${CSS.escape(data.model)}"]`)) {
                 modelSelect.value = data.model;
             }
@@ -977,14 +995,18 @@
         existing.forEach(el => el.remove());
     }
 
+    // Track the model name for the current conversation (set on load / send)
+    let _currentConvModel = '';
+
     function renderMessages(messages) {
         clearMessages();
         messages.forEach(msg => {
-            appendMessageEl(msg.role, msg.content, msg.attachments);
+            appendMessageEl(msg.role, msg.content, msg.attachments,
+                            msg.role === 'assistant' ? _currentConvModel : null);
         });
     }
 
-    function appendMessageEl(role, content, files) {
+    function appendMessageEl(role, content, files, modelName) {
         showWelcome(false);
         const div = document.createElement('div');
         div.className = `message message-${role}`;
@@ -1019,9 +1041,13 @@
         const thinkingDots = isThinking
             ? ' <span class="thinking-dots"><span></span><span></span><span></span></span>'
             : '';
+        const modelTag = (role === 'assistant' && modelName)
+            ? `<span class="model-tag">${escapeHtml(modelName)}</span>`
+            : '';
 
         div.innerHTML = `
             <div class="role-label${thinkingClass}">${roleLabel}${thinkingDots}</div>
+            ${modelTag}
             ${filesHtml}
             <div class="message-content">${renderContent(role, content)}</div>
         `;
@@ -1615,7 +1641,8 @@
         clearPendingFiles();
 
         // Show assistant placeholder and init streaming
-        appendMessageEl('assistant', '');
+        _currentConvModel = modelSelect.value;
+        appendMessageEl('assistant', '', null, modelSelect.value);
         initStreamingEls();
         scrollToBottom();
 
@@ -1760,6 +1787,8 @@
         toggleBtn.setAttribute('aria-expanded', String(expanded));
         if (isMobile()) {
             sidebarBackdrop.classList.toggle('active', expanded);
+        } else {
+            localStorage.setItem('mr2_sidebar_collapsed', expanded ? '' : '1');
         }
     });
 
@@ -1777,8 +1806,11 @@
     // ---------------------------------------------------------------
     // Init
     // ---------------------------------------------------------------
-    // Collapse sidebar on mobile at startup
+    // Restore sidebar state at startup
     if (isMobile()) {
+        sidebar.classList.add('collapsed');
+        toggleBtn.setAttribute('aria-expanded', 'false');
+    } else if (localStorage.getItem('mr2_sidebar_collapsed') === '1') {
         sidebar.classList.add('collapsed');
         toggleBtn.setAttribute('aria-expanded', 'false');
     }
