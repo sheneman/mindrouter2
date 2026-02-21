@@ -127,10 +127,11 @@ class InferenceService:
             # When thinking was not requested, merge reasoning into content
             thinking_requested = request.think is True or request.reasoning_effort is not None
             if not thinking_requested:
-                for choice in response.choices:
-                    if choice.message.reasoning and not choice.message.content:
-                        choice.message.content = choice.message.reasoning
-                        choice.message.reasoning = None
+                for choice in response.get("choices", []):
+                    msg = choice.get("message", {})
+                    if msg.get("reasoning") and not msg.get("content"):
+                        msg["content"] = msg["reasoning"]
+                        msg["reasoning"] = None
 
             # Update records
             await self._complete_request(
