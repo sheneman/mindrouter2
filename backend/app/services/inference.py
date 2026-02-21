@@ -846,7 +846,7 @@ class InferenceService:
                 data, request.request_id
             )
 
-        return canonical.model_dump()
+        return canonical.model_dump(exclude_none=True)
 
     async def _proxy_stream_request(
         self,
@@ -905,7 +905,7 @@ class InferenceService:
         else:
             canonical = VLLMOutTranslator.translate_embedding_response(data)
 
-        return canonical.model_dump()
+        return canonical.model_dump(exclude_none=True)
 
     async def _proxy_ollama_chat(
         self,
