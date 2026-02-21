@@ -129,9 +129,9 @@ class InferenceService:
             if not thinking_requested:
                 for choice in response.get("choices", []):
                     msg = choice.get("message", {})
-                    if msg.get("reasoning") and not msg.get("content"):
-                        msg["content"] = msg["reasoning"]
-                        msg["reasoning"] = None
+                    if msg.get("reasoning_content") and not msg.get("content"):
+                        msg["content"] = msg["reasoning_content"]
+                        msg["reasoning_content"] = None
 
             # Update records
             await self._complete_request(
@@ -193,7 +193,7 @@ class InferenceService:
                             choice.delta.reasoning = None
 
                 # Format as SSE (exclude_none to avoid tool_calls:null in chunks)
-                yield f"data: {chunk.model_dump_json(exclude_none=True)}\n\n".encode()
+                yield f"data: {chunk.model_dump_json(exclude_none=True, by_alias=True)}\n\n".encode()
 
                 chunk_count += 1
 
@@ -846,7 +846,7 @@ class InferenceService:
                 data, request.request_id
             )
 
-        return canonical.model_dump(exclude_none=True)
+        return canonical.model_dump(exclude_none=True, by_alias=True)
 
     async def _proxy_stream_request(
         self,
@@ -905,7 +905,7 @@ class InferenceService:
         else:
             canonical = VLLMOutTranslator.translate_embedding_response(data)
 
-        return canonical.model_dump(exclude_none=True)
+        return canonical.model_dump(exclude_none=True, by_alias=True)
 
     async def _proxy_ollama_chat(
         self,

@@ -108,7 +108,7 @@ class CanonicalMessage(BaseModel):
     """Canonical message representation."""
     role: MessageRole
     content: Optional[Union[str, List[ContentBlock]]] = None
-    reasoning: Optional[str] = None  # Full reasoning content (non-streaming)
+    reasoning: Optional[str] = Field(default=None, serialization_alias="reasoning_content")
     name: Optional[str] = None  # For tool messages
     tool_calls: Optional[List[CanonicalToolCall]] = None
     tool_call_id: Optional[str] = None  # For tool response messages
@@ -302,7 +302,7 @@ class CanonicalStreamDelta(BaseModel):
     """Delta content for streaming responses."""
     role: Optional[MessageRole] = None
     content: Optional[str] = None
-    reasoning: Optional[str] = None  # Thinking/reasoning content
+    reasoning: Optional[str] = Field(default=None, serialization_alias="reasoning_content")
     tool_calls: Optional[List[CanonicalStreamToolCallDelta]] = None
 
 
