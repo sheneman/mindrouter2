@@ -14,6 +14,8 @@
     .chat-layout {
         display: flex;
         height: 100%;
+        max-width: 100vw;
+        overflow: hidden;
     }
 
     /* Sidebar */
@@ -586,10 +588,11 @@
         .chat-sidebar { position: absolute; z-index: 50; height: 100%; }
         .chat-sidebar.collapsed { width: 0; }
         .sidebar-header { padding: 0.5rem; gap: 0.35rem; }
-        .chat-header select { max-width: 180px; }
-        .chat-header { padding: 0.4rem 0.5rem; gap: 0.4rem; }
+        .chat-header select { max-width: 140px; }
+        .chat-header { padding: 0.4rem 0.5rem; gap: 0.4rem; flex-wrap: wrap; }
         .chat-main { max-width: 100vw; overflow-x: hidden; }
-        .message { padding: 0.5rem 0.6rem; }
+        .message { padding: 0.5rem 0.6rem; max-width: 100%; box-sizing: border-box; }
+        .message-content { overflow-wrap: break-word; word-break: break-word; }
         .chat-input-area { padding: 0.4rem 0.5rem calc(0.75rem + env(safe-area-inset-bottom, 0px)); }
         .chat-input-wrapper { padding: 0.5rem; border-radius: 0.75rem; }
         .chat-input-row textarea { min-height: 2.8rem; font-size: 0.9rem; }
