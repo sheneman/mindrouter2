@@ -18,11 +18,11 @@
             <div class="card mb-4">
                 <div class="card-body">
                     <form method="GET" action="/admin/api-keys" class="row g-3">
-                        <div class="col-md-5">
+                        <div class="col-md-4">
                             <label for="search" class="form-label">Search</label>
                             <input type="text" class="form-control" id="search" name="search" value="{{ search }}" placeholder="Key name, prefix, username, or email...">
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-md-2">
                             <label for="key_status" class="form-label">Status</label>
                             <select class="form-select" id="key_status" name="key_status">
                                 <option value="">All</option>
@@ -30,6 +30,19 @@
                                 <option value="revoked" {% if key_status == 'revoked' %}selected{% endif %}>Revoked</option>
                                 <option value="expired" {% if key_status == 'expired' %}selected{% endif %}>Expired</option>
                             </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label for="sort_select" class="form-label">Sort</label>
+                            <select class="form-select" id="sort_select" onchange="applySortKeys(this.value)">
+                                <option value="created|desc" {% if sort == 'created' and dir == 'desc' or (not sort) %}selected{% endif %}>Newest</option>
+                                <option value="created|asc" {% if sort == 'created' and dir == 'asc' %}selected{% endif %}>Oldest</option>
+                                <option value="last_used|desc" {% if sort == 'last_used' and dir == 'desc' %}selected{% endif %}>Recently Used</option>
+                                <option value="last_used|asc" {% if sort == 'last_used' and dir == 'asc' %}selected{% endif %}>Least Recently Used</option>
+                                <option value="usage|desc" {% if sort == 'usage' and dir == 'desc' %}selected{% endif %}>Most Used</option>
+                                <option value="usage|asc" {% if sort == 'usage' and dir == 'asc' %}selected{% endif %}>Least Used</option>
+                            </select>
+                            <input type="hidden" id="sort_field" name="sort" value="{{ sort }}">
+                            <input type="hidden" id="sort_dir" name="dir" value="{{ dir }}">
                         </div>
                         <div class="col-md-2 d-flex align-items-end">
                             <button type="submit" class="btn btn-primary me-2">Filter</button>
@@ -54,6 +67,7 @@
                                     <th scope="col">Expires</th>
                                     <th scope="col">Last Used</th>
                                     <th scope="col">Usage</th>
+                                    <th scope="col">Last IP</th>
                                     <th scope="col">Created</th>
                                 </tr>
                             </thead>
@@ -89,6 +103,7 @@
                                     </td>
                                     <td>{{ k.last_used_at|localtime if k.last_used_at else 'Never' }}</td>
                                     <td>{{ "{:,}".format(k.usage_count) }}</td>
+                                    <td><code class="text-muted">{{ key_last_ips.get(k.id, '—') }}</code></td>
                                     <td>{{ k.created_at|localtime('%Y-%m-%d') }}</td>
                                 </tr>
                                 {% endfor %}
@@ -101,19 +116,19 @@
                     <nav aria-label="API key pagination">
                         <ul class="pagination justify-content-center mb-0">
                             <li class="page-item {% if page <= 1 %}disabled{% endif %}">
-                                <a class="page-link" href="/admin/api-keys?page={{ page - 1 }}{% if search %}&search={{ search }}{% endif %}{% if key_status %}&key_status={{ key_status }}{% endif %}">Previous</a>
+                                <a class="page-link" href="/admin/api-keys?page={{ page - 1 }}{% if search %}&search={{ search }}{% endif %}{% if key_status %}&key_status={{ key_status }}{% endif %}{% if sort %}&sort={{ sort }}&dir={{ dir }}{% endif %}">Previous</a>
                             </li>
                             {% for p in range(1, total_pages + 1) %}
                             {% if p == page or (p >= page - 2 and p <= page + 2) or p == 1 or p == total_pages %}
                             <li class="page-item {% if p == page %}active{% endif %}">
-                                <a class="page-link" href="/admin/api-keys?page={{ p }}{% if search %}&search={{ search }}{% endif %}{% if key_status %}&key_status={{ key_status }}{% endif %}">{{ p }}</a>
+                                <a class="page-link" href="/admin/api-keys?page={{ p }}{% if search %}&search={{ search }}{% endif %}{% if key_status %}&key_status={{ key_status }}{% endif %}{% if sort %}&sort={{ sort }}&dir={{ dir }}{% endif %}">{{ p }}</a>
                             </li>
                             {% elif p == page - 3 or p == page + 3 %}
                             <li class="page-item disabled"><span class="page-link">...</span></li>
                             {% endif %}
                             {% endfor %}
                             <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
-                                <a class="page-link" href="/admin/api-keys?page={{ page + 1 }}{% if search %}&search={{ search }}{% endif %}{% if key_status %}&key_status={{ key_status }}{% endif %}">Next</a>
+                                <a class="page-link" href="/admin/api-keys?page={{ page + 1 }}{% if search %}&search={{ search }}{% endif %}{% if key_status %}&key_status={{ key_status }}{% endif %}{% if sort %}&sort={{ sort }}&dir={{ dir }}{% endif %}">Next</a>
                             </li>
                         </ul>
                     </nav>
@@ -123,4 +138,14 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function applySortKeys(val) {
+    var parts = val.split('|');
+    document.getElementById('sort_field').value = parts[0];
+    document.getElementById('sort_dir').value = parts[1];
+}
+</script>
 {% endblock %}

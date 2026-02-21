@@ -146,6 +146,12 @@ async def public_dashboard(
     except Exception:
         queue_size = 0
 
+    # Active users in last 24 hours
+    try:
+        active_users = await crud.get_active_user_count(db)
+    except Exception:
+        active_users = 0
+
     # Look up user for navbar rendering
     user_id = get_session_user_id(request)
     user = None
@@ -161,6 +167,7 @@ async def public_dashboard(
             "healthy_backends": len(healthy_backends),
             "models": sorted(models),
             "queue_size": queue_size,
+            "active_users": active_users,
             "user": user,
             "user_id": user_id,
         },
@@ -532,10 +539,12 @@ async def admin_users(
     request: Request,
     search: Optional[str] = None,
     group_id: Optional[int] = None,
+    sort: Optional[str] = None,
+    dir: Optional[str] = None,
     page: int = 1,
     db: AsyncSession = Depends(get_async_db),
 ):
-    """Admin user management with search and pagination."""
+    """Admin user management with search, sort, and pagination."""
     user_id = get_session_user_id(request)
     if not user_id:
         return RedirectResponse(url="/login", status_code=302)
@@ -546,11 +555,17 @@ async def admin_users(
 
     per_page = 25
     skip = (page - 1) * per_page
+    sort_dir = dir if dir in ("asc", "desc") else "desc"
     users, total = await crud.get_users(
-        db, skip=skip, limit=per_page, group_id=group_id, search=search
+        db, skip=skip, limit=per_page, group_id=group_id, search=search,
+        sort_by=sort, sort_dir=sort_dir,
     )
     groups = await crud.get_all_groups(db)
     total_pages = max(1, (total + per_page - 1) // per_page)
+
+    # Fetch token totals for this page of users
+    user_ids = [u.id for u in users]
+    user_tokens = await crud.get_user_token_totals(db, user_ids)
 
     return templates.TemplateResponse(
         "admin/users.html",
@@ -564,6 +579,9 @@ async def admin_users(
             "total_pages": total_pages,
             "search": search or "",
             "group_id": group_id,
+            "sort": sort or "",
+            "dir": sort_dir,
+            "user_tokens": user_tokens,
         },
     )
 
@@ -1748,6 +1766,7 @@ async def admin_user_detail(
 
     monthly_usage = await crud.get_user_monthly_usage(db, user_id)
     groups = await crud.get_all_groups(db)
+    recent_ips = await crud.get_user_recent_ips(db, user_id, days=90)
 
     return templates.TemplateResponse(
         "admin/user_detail.html",
@@ -1758,6 +1777,7 @@ async def admin_user_detail(
             "stats": stats,
             "monthly_usage": monthly_usage,
             "groups": groups,
+            "recent_ips": recent_ips,
             "success": success,
             "error": error,
         },
@@ -1821,10 +1841,12 @@ async def admin_api_keys(
     request: Request,
     search: Optional[str] = None,
     key_status: Optional[str] = None,
+    sort: Optional[str] = None,
+    dir: Optional[str] = None,
     page: int = 1,
     db: AsyncSession = Depends(get_async_db),
 ):
-    """Admin API key listing."""
+    """Admin API key listing with sort and IP tracking."""
     user_id = get_session_user_id(request)
     if not user_id:
         return RedirectResponse(url="/login", status_code=302)
@@ -1835,10 +1857,16 @@ async def admin_api_keys(
 
     per_page = 50
     skip = (page - 1) * per_page
+    sort_dir = dir if dir in ("asc", "desc") else "desc"
     keys, total = await crud.get_all_api_keys(
-        db, skip=skip, limit=per_page, search=search, status_filter=key_status
+        db, skip=skip, limit=per_page, search=search, status_filter=key_status,
+        sort_by=sort, sort_dir=sort_dir,
     )
     total_pages = max(1, (total + per_page - 1) // per_page)
+
+    # Fetch last IP for each key on this page
+    key_ids = [k.id for k in keys]
+    key_last_ips = await crud.get_api_key_last_ips_batch(db, key_ids)
 
     return templates.TemplateResponse(
         "admin/api_keys.html",
@@ -1851,6 +1879,9 @@ async def admin_api_keys(
             "total_pages": total_pages,
             "search": search or "",
             "key_status": key_status or "",
+            "sort": sort or "",
+            "dir": sort_dir,
+            "key_last_ips": key_last_ips,
             "now_utc": datetime.now(timezone.utc),
         },
     )

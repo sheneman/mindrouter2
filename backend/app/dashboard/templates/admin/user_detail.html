@@ -235,6 +235,36 @@
                 </div>
             </div>
 
+            <!-- Recent IPs -->
+            {% if recent_ips %}
+            <div class="card mb-4">
+                <div class="card-header"><i class="bi bi-globe"></i> Recent IP Addresses (90 days)</div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <caption class="sr-only">Recent IP addresses</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">IP Address</th>
+                                    <th scope="col">Last Seen</th>
+                                    <th scope="col">Request Count</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for ip, last_seen, count in recent_ips %}
+                                <tr>
+                                    <td><code>{{ ip }}</code></td>
+                                    <td>{{ last_seen|localtime }}</td>
+                                    <td>{{ "{:,}".format(count) }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
             <!-- Monthly Usage Chart -->
             {% if monthly_usage %}
             <div class="card mb-4">

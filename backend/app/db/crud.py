@@ -18,7 +18,7 @@ import json as _json
 from datetime import datetime, timedelta, timezone
 from typing import Any, List, Optional, Tuple
 
-from sqlalchemy import and_, delete, func, or_, select, update
+from sqlalchemy import and_, case, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -227,6 +227,16 @@ async def create_user(
     return user
 
 
+async def get_active_user_count(db: AsyncSession, since_hours: int = 24) -> int:
+    """Count distinct users who made requests in the last N hours."""
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=since_hours)
+    result = await db.execute(
+        select(func.count(func.distinct(Request.user_id)))
+        .where(Request.created_at >= cutoff)
+    )
+    return result.scalar_one() or 0
+
+
 async def get_users(
     db: AsyncSession,
     skip: int = 0,
@@ -235,8 +245,10 @@ async def get_users(
     group_id: Optional[int] = None,
     is_active: Optional[bool] = None,
     search: Optional[str] = None,
+    sort_by: Optional[str] = None,
+    sort_dir: str = "desc",
 ) -> Tuple[List[User], int]:
-    """Get list of users with optional filtering. Returns (users, total_count)."""
+    """Get list of users with optional filtering and sorting. Returns (users, total_count)."""
     conditions = [User.deleted_at.is_(None)]
     if role:
         conditions.append(User.role == role)
@@ -260,17 +272,75 @@ async def get_users(
     count_result = await db.execute(select(func.count(User.id)).where(where_clause))
     total = count_result.scalar_one()
 
-    # Paginated results with group eager-loaded
-    query = (
-        select(User)
-        .options(selectinload(User.group))
-        .where(where_clause)
-        .order_by(User.created_at.desc())
-        .offset(skip)
-        .limit(limit)
-    )
+    # Determine sort order
+    asc = sort_dir.lower() == "asc"
+
+    if sort_by == "tokens":
+        # Sort by total tokens via a subquery
+        token_subq = (
+            select(
+                UsageLedger.user_id,
+                func.coalesce(func.sum(UsageLedger.total_tokens), 0).label("total_tokens"),
+            )
+            .group_by(UsageLedger.user_id)
+            .subquery()
+        )
+        query = (
+            select(User)
+            .options(selectinload(User.group))
+            .outerjoin(token_subq, User.id == token_subq.c.user_id)
+            .where(where_clause)
+        )
+        order_col = func.coalesce(token_subq.c.total_tokens, 0)
+        query = query.order_by(order_col.asc() if asc else order_col.desc())
+    elif sort_by == "last_login":
+        query = (
+            select(User)
+            .options(selectinload(User.group))
+            .where(where_clause)
+        )
+        # NULLS LAST for asc, NULLS FIRST for desc (so never-logged-in users go to end)
+        if asc:
+            query = query.order_by(
+                case((User.last_login_at.is_(None), 1), else_=0),
+                User.last_login_at.asc(),
+            )
+        else:
+            query = query.order_by(
+                case((User.last_login_at.is_(None), 1), else_=0),
+                User.last_login_at.desc(),
+            )
+    elif sort_by == "name":
+        query = (
+            select(User)
+            .options(selectinload(User.group))
+            .where(where_clause)
+            .order_by(User.username.asc() if asc else User.username.desc())
+        )
+    else:
+        # Default: sort by created_at
+        query = (
+            select(User)
+            .options(selectinload(User.group))
+            .where(where_clause)
+            .order_by(User.created_at.asc() if asc else User.created_at.desc())
+        )
+
+    query = query.offset(skip).limit(limit)
     result = await db.execute(query)
     return list(result.scalars().all()), total
+
+
+async def get_user_token_totals(db: AsyncSession, user_ids: List[int]) -> dict:
+    """Get total tokens for a list of user IDs. Returns {user_id: total_tokens}."""
+    if not user_ids:
+        return {}
+    result = await db.execute(
+        select(UsageLedger.user_id, func.sum(UsageLedger.total_tokens))
+        .where(UsageLedger.user_id.in_(user_ids))
+        .group_by(UsageLedger.user_id)
+    )
+    return {row[0]: int(row[1]) for row in result.all()}
 
 
 async def delete_user(db: AsyncSession, user_id: int) -> bool:
@@ -1920,8 +1990,10 @@ async def get_all_api_keys(
     limit: int = 100,
     search: Optional[str] = None,
     status_filter: Optional[str] = None,
+    sort_by: Optional[str] = None,
+    sort_dir: str = "desc",
 ) -> Tuple[List[ApiKey], int]:
-    """Get all API keys with user info, paginated."""
+    """Get all API keys with user info, paginated and sortable."""
     conditions = []
     if search:
         search_pattern = f"%{search}%"
@@ -1947,10 +2019,23 @@ async def get_all_api_keys(
     count_result = await db.execute(count_query)
     total = count_result.scalar_one()
 
+    # Determine sort order
+    asc = sort_dir.lower() == "asc"
+    if sort_by == "last_used":
+        if asc:
+            order = [case((ApiKey.last_used_at.is_(None), 1), else_=0), ApiKey.last_used_at.asc()]
+        else:
+            order = [case((ApiKey.last_used_at.is_(None), 1), else_=0), ApiKey.last_used_at.desc()]
+    elif sort_by == "usage":
+        order = [ApiKey.usage_count.asc() if asc else ApiKey.usage_count.desc()]
+    else:
+        # Default: created_at
+        order = [ApiKey.created_at.asc() if asc else ApiKey.created_at.desc()]
+
     query = (
         base_query
         .options(selectinload(ApiKey.user))
-        .order_by(ApiKey.created_at.desc())
+        .order_by(*order)
         .offset(skip)
         .limit(limit)
     )
@@ -2086,6 +2171,55 @@ async def delete_blog_post(db: AsyncSession, post_id: int) -> bool:
         await db.flush()
         return True
     return False
+
+
+# IP Tracking queries
+async def get_api_key_last_ips_batch(
+    db: AsyncSession, api_key_ids: List[int]
+) -> dict:
+    """Get the most recent client_ip for each API key. Returns {api_key_id: ip}."""
+    if not api_key_ids:
+        return {}
+    from sqlalchemy import text
+
+    placeholders = ",".join(str(int(kid)) for kid in api_key_ids)
+    query = text(f"""
+        SELECT r.api_key_id, r.client_ip
+        FROM requests r
+        INNER JOIN (
+            SELECT api_key_id, MAX(created_at) as max_created
+            FROM requests
+            WHERE api_key_id IN ({placeholders}) AND client_ip IS NOT NULL
+            GROUP BY api_key_id
+        ) latest ON r.api_key_id = latest.api_key_id AND r.created_at = latest.max_created
+        WHERE r.client_ip IS NOT NULL
+    """)
+    result = await db.execute(query)
+    return {row[0]: row[1] for row in result.all()}
+
+
+async def get_user_recent_ips(
+    db: AsyncSession, user_id: int, days: int = 90
+) -> List[Tuple]:
+    """Get recent IPs for a user. Returns list of (ip, last_seen, count)."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    result = await db.execute(
+        select(
+            Request.client_ip,
+            func.max(Request.created_at).label("last_seen"),
+            func.count(Request.id).label("req_count"),
+        )
+        .where(
+            and_(
+                Request.user_id == user_id,
+                Request.created_at >= cutoff,
+                Request.client_ip.isnot(None),
+            )
+        )
+        .group_by(Request.client_ip)
+        .order_by(func.max(Request.created_at).desc())
+    )
+    return [(row[0], row[1], row[2]) for row in result.all()]
 
 
 # AppConfig CRUD
