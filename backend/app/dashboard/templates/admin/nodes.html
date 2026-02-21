@@ -18,6 +18,9 @@
                 {% elif success == 'updated' %}Node updated successfully.
                 {% elif success == 'removed' %}Node removed successfully.
                 {% elif success == 'refreshed' %}Node sidecar refreshed.
+                {% elif success == 'brought_online' %}Node brought online. Backends re-enabled.
+                {% elif success == 'taken_offline' %}Node taken offline. All backends disabled.
+                {% elif success == 'force_drained' %}Remaining requests force-cancelled.
                 {% else %}Operation completed successfully.{% endif %}
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
@@ -80,6 +83,22 @@
                         {% endif %}
                     </span>
                     <span>
+                        {% if item.backends %}
+                            {% set all_disabled = item.backends | selectattr('status.value', 'equalto', 'disabled') | list | length == item.backends | length %}
+                            {% if all_disabled %}
+                            <form method="POST" action="/admin/nodes/{{ item.node.id }}/bring-online" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-outline-success" title="Bring node online">
+                                    <i class="bi bi-power"></i> Bring Online
+                                </button>
+                            </form>
+                            {% else %}
+                            <button type="button" class="btn btn-sm btn-outline-warning btn-take-offline"
+                                    data-node-id="{{ item.node.id }}" data-node-name="{{ item.node.name }}"
+                                    title="Take node offline">
+                                <i class="bi bi-pause-circle"></i> Take Offline
+                            </button>
+                            {% endif %}
+                        {% endif %}
                         <button class="btn btn-sm btn-outline-secondary" type="button"
                                 data-bs-toggle="collapse" data-bs-target="#edit-node-{{ item.node.id }}"
                                 title="Edit node">
@@ -108,6 +127,22 @@
                         Rebuild and restart the sidecar Docker image to align versions.
                     </div>
                     {% endif %}
+
+                    <!-- Draining Panel (hidden by default, shown via JS) -->
+                    <div class="alert alert-warning d-none mb-3" id="drain-panel-{{ item.node.id }}">
+                        <h6><i class="bi bi-hourglass-split"></i> Draining Node: <strong>{{ item.node.name }}</strong></h6>
+                        <p class="mb-1">Active requests: <strong id="drain-count-{{ item.node.id }}">...</strong></p>
+                        <div class="progress mb-2" style="height: 6px;">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated bg-warning" role="progressbar" style="width: 100%"></div>
+                        </div>
+                        <p class="text-muted small mb-2">Elapsed: <span id="drain-elapsed-{{ item.node.id }}">0</span>s</p>
+                        <div id="drain-force-{{ item.node.id }}" class="d-none">
+                            <button type="button" class="btn btn-sm btn-danger btn-force-drain"
+                                    data-node-id="{{ item.node.id }}" data-node-name="{{ item.node.name }}">
+                                <i class="bi bi-x-octagon"></i> Force Kill Remaining Requests
+                            </button>
+                        </div>
+                    </div>
 
                     <!-- Collapsible Edit Form -->
                     <div class="collapse mb-3" id="edit-node-{{ item.node.id }}">
@@ -234,4 +269,85 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    // Take Offline button handler
+    document.querySelectorAll('.btn-take-offline').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var nodeId = this.dataset.nodeId;
+            var nodeName = this.dataset.nodeName;
+            if (!confirm('Take node "' + nodeName + '" offline? This will disable all backends and stop new request routing.')) return;
+
+            fetch('/admin/nodes/' + nodeId + '/take-offline', { method: 'POST' })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (!data.ok) { alert('Error: ' + (data.error || 'Unknown')); return; }
+                    startDrainPolling(nodeId);
+                })
+                .catch(function(err) { alert('Request failed: ' + err); });
+        });
+    });
+
+    // Force Drain button handler
+    document.querySelectorAll('.btn-force-drain').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var nodeId = this.dataset.nodeId;
+            var nodeName = this.dataset.nodeName;
+            if (!confirm('Force-cancel ALL remaining requests on node "' + nodeName + '"? This cannot be undone.')) return;
+
+            fetch('/admin/nodes/' + nodeId + '/force-drain', { method: 'POST' })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.ok) {
+                        window.location.href = '/admin/nodes?success=force_drained';
+                    } else {
+                        alert('Error: ' + (data.error || 'Unknown'));
+                    }
+                })
+                .catch(function(err) { alert('Request failed: ' + err); });
+        });
+    });
+
+    function startDrainPolling(nodeId) {
+        var panel = document.getElementById('drain-panel-' + nodeId);
+        var countEl = document.getElementById('drain-count-' + nodeId);
+        var elapsedEl = document.getElementById('drain-elapsed-' + nodeId);
+        var forceEl = document.getElementById('drain-force-' + nodeId);
+
+        panel.classList.remove('d-none');
+        var startTime = Date.now();
+
+        var interval = setInterval(function() {
+            var elapsed = Math.floor((Date.now() - startTime) / 1000);
+            elapsedEl.textContent = elapsed;
+
+            // Show force kill after 30 seconds
+            if (elapsed >= 30) {
+                forceEl.classList.remove('d-none');
+            }
+
+            fetch('/admin/nodes/' + nodeId + '/active-requests')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    countEl.textContent = data.count;
+                    if (data.count === 0) {
+                        clearInterval(interval);
+                        countEl.textContent = '0';
+                        panel.classList.remove('alert-warning');
+                        panel.classList.add('alert-success');
+                        panel.querySelector('h6').innerHTML = '<i class="bi bi-check-circle"></i> Fully drained!';
+                        forceEl.classList.add('d-none');
+                        setTimeout(function() {
+                            window.location.href = '/admin/nodes?success=taken_offline';
+                        }, 1500);
+                    }
+                })
+                .catch(function() { /* ignore transient fetch errors */ });
+        }, 1000);
+    }
+})();
+</script>
 {% endblock %}

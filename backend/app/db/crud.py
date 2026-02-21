@@ -2255,3 +2255,54 @@ async def set_config(
         row = AppConfig(key=key, value=json_value, description=description)
         db.add(row)
     await db.flush()
+
+
+# ---------------------------------------------------------------------------
+# Node drain helpers
+# ---------------------------------------------------------------------------
+
+
+async def get_active_request_count_for_node_backends(
+    db: AsyncSession, backend_ids: List[int]
+) -> int:
+    """Sum current_concurrent across the given backends."""
+    if not backend_ids:
+        return 0
+    result = await db.execute(
+        select(func.coalesce(func.sum(Backend.current_concurrent), 0)).where(
+            Backend.id.in_(backend_ids)
+        )
+    )
+    return int(result.scalar())
+
+
+async def cancel_active_requests_for_backends(
+    db: AsyncSession, backend_ids: List[int]
+) -> int:
+    """Cancel all PROCESSING requests on the given backends and reset counters."""
+    if not backend_ids:
+        return 0
+    now = datetime.now(timezone.utc)
+    result = await db.execute(
+        update(Request)
+        .where(
+            and_(
+                Request.backend_id.in_(backend_ids),
+                Request.status == RequestStatus.PROCESSING,
+            )
+        )
+        .values(
+            status=RequestStatus.CANCELLED,
+            completed_at=now,
+            error_message="Force-drained: node taken offline by admin",
+        )
+    )
+    cancelled = result.rowcount
+    # Reset concurrency counters
+    await db.execute(
+        update(Backend)
+        .where(Backend.id.in_(backend_ids))
+        .values(current_concurrent=0)
+    )
+    await db.flush()
+    return cancelled

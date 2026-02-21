@@ -1096,6 +1096,109 @@ async def refresh_node(
     return RedirectResponse(url="/admin/nodes?success=refreshed", status_code=302)
 
 
+@dashboard_router.post("/admin/nodes/{node_id}/take-offline")
+async def take_node_offline(
+    request: Request,
+    node_id: int,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Take a node offline: disable all its backends and mark node offline."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return JSONResponse({"ok": False, "error": "Not authenticated"}, status_code=401)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or (not user.group or not user.group.is_admin):
+        return JSONResponse({"ok": False, "error": "Forbidden"}, status_code=403)
+
+    from backend.app.db.models import NodeStatus
+
+    all_backends = await crud.get_all_backends(db)
+    node_backends = [b for b in all_backends if b.node_id == node_id]
+
+    registry = get_registry()
+    for b in node_backends:
+        await registry.disable_backend(b.id)
+
+    await crud.update_node_status(db, node_id, NodeStatus.OFFLINE)
+    await db.commit()
+    return JSONResponse({"ok": True})
+
+
+@dashboard_router.post("/admin/nodes/{node_id}/bring-online")
+async def bring_node_online(
+    request: Request,
+    node_id: int,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Bring a node back online: re-enable all its backends."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or (not user.group or not user.group.is_admin):
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    from backend.app.db.models import NodeStatus
+
+    all_backends = await crud.get_all_backends(db)
+    node_backends = [b for b in all_backends if b.node_id == node_id]
+
+    registry = get_registry()
+    for b in node_backends:
+        await registry.enable_backend(b.id)
+
+    await crud.update_node_status(db, node_id, NodeStatus.ONLINE)
+    await db.commit()
+    return RedirectResponse(url="/admin/nodes?success=brought_online", status_code=302)
+
+
+@dashboard_router.get("/admin/nodes/{node_id}/active-requests")
+async def node_active_requests(
+    request: Request,
+    node_id: int,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Return the count of active (in-flight) requests on this node's backends."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or (not user.group or not user.group.is_admin):
+        return JSONResponse({"error": "Forbidden"}, status_code=403)
+
+    all_backends = await crud.get_all_backends(db)
+    backend_ids = [b.id for b in all_backends if b.node_id == node_id]
+
+    count = await crud.get_active_request_count_for_node_backends(db, backend_ids)
+    return JSONResponse({"count": count})
+
+
+@dashboard_router.post("/admin/nodes/{node_id}/force-drain")
+async def force_drain_node(
+    request: Request,
+    node_id: int,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """Force-cancel all active requests on this node's backends."""
+    user_id = get_session_user_id(request)
+    if not user_id:
+        return JSONResponse({"ok": False, "error": "Not authenticated"}, status_code=401)
+
+    user = await crud.get_user_by_id(db, user_id)
+    if not user or (not user.group or not user.group.is_admin):
+        return JSONResponse({"ok": False, "error": "Forbidden"}, status_code=403)
+
+    all_backends = await crud.get_all_backends(db)
+    backend_ids = [b.id for b in all_backends if b.node_id == node_id]
+
+    cancelled = await crud.cancel_active_requests_for_backends(db, backend_ids)
+    await db.commit()
+    return JSONResponse({"ok": True, "cancelled": cancelled})
+
+
 @dashboard_router.get("/admin/backends", response_class=HTMLResponse)
 async def admin_backends(
     request: Request,
