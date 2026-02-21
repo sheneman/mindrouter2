@@ -1686,7 +1686,7 @@
                         }
                         const delta = chunk.choices?.[0]?.delta;
                         const contentDelta = delta?.content;
-                        const reasoningDelta = delta?.reasoning;
+                        const reasoningDelta = delta?.reasoning_content;
                         if (reasoningDelta) {
                             appendStreamReasoning(reasoningDelta);
                         }
