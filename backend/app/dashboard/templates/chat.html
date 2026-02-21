@@ -682,7 +682,7 @@
                     </button>
                     <label for="chatInput" class="sr-only">Chat message</label>
                     <textarea id="chatInput" rows="2"
-                              placeholder="Type a message... (Shift+Enter for new line)"
+                              placeholder="Type a message..."
                               aria-label="Chat message"
                               autofocus></textarea>
                     <button class="btn btn-primary" id="sendBtn" title="Send message" aria-label="Send message">
@@ -1813,6 +1813,10 @@
     } else if (localStorage.getItem('mr2_sidebar_collapsed') === '1') {
         sidebar.classList.add('collapsed');
         toggleBtn.setAttribute('aria-expanded', 'false');
+    }
+
+    if (!isMobile()) {
+        inputEl.placeholder = 'Type a message... (Shift+Enter for new line)';
     }
 
     loadModels();
