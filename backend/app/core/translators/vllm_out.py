@@ -193,6 +193,7 @@ class VLLMOutTranslator:
     def translate_chat_response(
         openai_response: Dict[str, Any],
         request_id: Optional[str] = None,
+        thinking_enabled: bool = True,
     ) -> CanonicalChatResponse:
         """Translate vLLM/OpenAI chat response to canonical format.
 
@@ -222,10 +223,22 @@ class VLLMOutTranslator:
                     for tc in message_data["tool_calls"]
                 ]
 
+            content = message_data.get("content")
+            reasoning = message_data.get("reasoning_content") or message_data.get("reasoning")
+
+            # vLLM/Qwen3.5 bug: when thinking is disabled the model
+            # may put all output into reasoning_content with content
+            # empty.  Promote reasoning to content in that case.
+            # Only do this when thinking was explicitly disabled (think=False),
+            # not for always-thinking models like gpt-oss (think=None).
+            if not thinking_enabled and not content and reasoning and not tool_calls:
+                content = reasoning
+                reasoning = None
+
             message = CanonicalMessage(
                 role=MessageRole(message_data.get("role", "assistant")),
-                content=message_data.get("content"),
-                reasoning=message_data.get("reasoning_content") or message_data.get("reasoning"),
+                content=content,
+                reasoning=reasoning,
                 tool_calls=tool_calls,
             )
             choices.append(
@@ -256,6 +269,7 @@ class VLLMOutTranslator:
         openai_stream: AsyncIterator[bytes],
         request_id: str,
         model: str,
+        thinking_enabled: bool = True,
     ) -> AsyncIterator[CanonicalStreamChunk]:
         """Translate vLLM/OpenAI streaming response to canonical stream chunks.
 
@@ -316,14 +330,25 @@ class VLLMOutTranslator:
                                         for tcd in delta_data["tool_calls"]
                                     ]
 
+                                content_delta = delta_data.get("content")
+                                reasoning_delta = delta_data.get("reasoning_content") or delta_data.get("reasoning")
+
+                                # Same Qwen 3.5 workaround as non-streaming:
+                                # if content is empty but reasoning has data,
+                                # promote reasoning to content.
+                                # Only when thinking was explicitly disabled.
+                                if not thinking_enabled and not content_delta and reasoning_delta and not tc_deltas:
+                                    content_delta = reasoning_delta
+                                    reasoning_delta = None
+
                                 delta = CanonicalStreamDelta(
                                     role=(
                                         MessageRole(delta_data["role"])
                                         if "role" in delta_data
                                         else None
                                     ),
-                                    content=delta_data.get("content"),
-                                    reasoning=delta_data.get("reasoning_content") or delta_data.get("reasoning"),
+                                    content=content_delta,
+                                    reasoning=reasoning_delta,
                                     tool_calls=tc_deltas,
                                 )
                                 choices.append(

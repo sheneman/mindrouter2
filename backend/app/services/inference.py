@@ -900,8 +900,10 @@ class InferenceService:
                 data, request.request_id, request.model
             )
         else:
+            thinking_enabled = request.think if request.think is not None else True
             canonical = VLLMOutTranslator.translate_chat_response(
-                data, request.request_id
+                data, request.request_id,
+                thinking_enabled=thinking_enabled,
             )
 
         return canonical.model_dump(exclude_none=True, by_alias=True)
@@ -932,8 +934,10 @@ class InferenceService:
                 ):
                     yield chunk
             else:
+                thinking_enabled = request.think if request.think is not None else True
                 async for chunk in VLLMOutTranslator.translate_chat_stream(
-                    response.aiter_bytes(), request.request_id, request.model
+                    response.aiter_bytes(), request.request_id, request.model,
+                    thinking_enabled=thinking_enabled,
                 ):
                     yield chunk
 
