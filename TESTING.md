@@ -48,6 +48,7 @@
 | `backend/app/tests/unit/test_version_alignment.py` | 6 | Version alignment: pyproject.toml reading, sidecar VERSION file consistency |
 | `backend/app/tests/unit/test_accessibility.py` | 96 | WCAG 2.1 Level A/AA: ARIA, semantic HTML, heading hierarchy, forms, sidebar include |
 | `backend/app/tests/unit/test_chat_mobile.py` | 37 | Chat mobile responsiveness: sidebar collapse/backdrop, thinking block collapse, compact layout CSS |
+| `backend/app/tests/unit/test_rerank_translators.py` | 22 | Rerank/score translators: OpenAIIn, VLLMOut rerank & score methods, canonical schema validation |
 
 **Shared fixtures:** `backend/app/tests/conftest.py`
 
@@ -62,6 +63,7 @@
 | File | What it covers |
 |------|----------------|
 | `backend/app/tests/integration/test_live_backends.py` | Full translation pipeline against real Ollama (phi4:14b) and vLLM (gpt-oss-120b) backends — streaming and non-streaming chat |
+| `backend/app/tests/integration/test_rag_pipeline.py` | RAG pipeline: embedding, reranking, scoring endpoints through MindRouter2 proxy, end-to-end RAG test |
 
 ---
 

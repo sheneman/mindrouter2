@@ -22,6 +22,8 @@ from backend.app.core.canonical_schemas import (
     CanonicalEmbeddingRequest,
     CanonicalFunctionCall,
     CanonicalMessage,
+    CanonicalRerankRequest,
+    CanonicalScoreRequest,
     CanonicalToolCall,
     CanonicalToolDefinition,
     ContentBlock,
@@ -136,6 +138,40 @@ class OpenAIInTranslator:
             input=data["input"],
             encoding_format=data.get("encoding_format", "float"),
             dimensions=data.get("dimensions"),
+        )
+
+    @staticmethod
+    def translate_rerank_request(data: Dict[str, Any]) -> CanonicalRerankRequest:
+        """Translate OpenAI rerank request to canonical format.
+
+        Args:
+            data: Raw request body from rerank endpoint
+
+        Returns:
+            CanonicalRerankRequest
+        """
+        return CanonicalRerankRequest(
+            model=data["model"],
+            query=data["query"],
+            documents=data["documents"],
+            top_n=data.get("top_n"),
+            return_documents=data.get("return_documents", True),
+        )
+
+    @staticmethod
+    def translate_score_request(data: Dict[str, Any]) -> CanonicalScoreRequest:
+        """Translate OpenAI score request to canonical format.
+
+        Args:
+            data: Raw request body from score endpoint
+
+        Returns:
+            CanonicalScoreRequest
+        """
+        return CanonicalScoreRequest(
+            model=data["model"],
+            text_1=data["text_1"],
+            text_2=data["text_2"],
         )
 
     @staticmethod

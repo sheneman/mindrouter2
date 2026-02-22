@@ -27,6 +27,12 @@ from backend.app.core.canonical_schemas import (
     CanonicalEmbeddingResponse,
     CanonicalFunctionCall,
     CanonicalMessage,
+    CanonicalRerankRequest,
+    CanonicalRerankResponse,
+    CanonicalRerankResult,
+    CanonicalScoreData,
+    CanonicalScoreRequest,
+    CanonicalScoreResponse,
     CanonicalStreamChunk,
     CanonicalStreamChoice,
     CanonicalStreamDelta,
@@ -350,6 +356,115 @@ class VLLMOutTranslator:
 
                         except json.JSONDecodeError:
                             continue
+
+    @staticmethod
+    def translate_rerank_request(
+        canonical: CanonicalRerankRequest,
+    ) -> Dict[str, Any]:
+        """Translate canonical rerank request to vLLM format.
+
+        Args:
+            canonical: Canonical rerank request
+
+        Returns:
+            vLLM-compatible API request body
+        """
+        payload: Dict[str, Any] = {
+            "model": canonical.model,
+            "query": canonical.query,
+            "documents": canonical.documents,
+        }
+
+        if canonical.top_n is not None:
+            payload["top_n"] = canonical.top_n
+
+        return payload
+
+    @staticmethod
+    def translate_rerank_response(
+        data: Dict[str, Any],
+    ) -> CanonicalRerankResponse:
+        """Translate vLLM rerank response to canonical format.
+
+        Args:
+            data: Raw vLLM rerank response
+
+        Returns:
+            CanonicalRerankResponse
+        """
+        usage_data = data.get("usage", {})
+        usage = UsageInfo(
+            prompt_tokens=usage_data.get("prompt_tokens", 0),
+            completion_tokens=usage_data.get("completion_tokens", 0),
+            total_tokens=usage_data.get("total_tokens", 0),
+        )
+
+        results = []
+        for r in data.get("results", []):
+            results.append(CanonicalRerankResult(
+                index=r["index"],
+                relevance_score=r["relevance_score"],
+                document=r.get("document"),
+            ))
+
+        return CanonicalRerankResponse(
+            id=data.get("id", ""),
+            model=data.get("model", ""),
+            results=results,
+            usage=usage,
+        )
+
+    @staticmethod
+    def translate_score_request(
+        canonical: CanonicalScoreRequest,
+    ) -> Dict[str, Any]:
+        """Translate canonical score request to vLLM format.
+
+        Args:
+            canonical: Canonical score request
+
+        Returns:
+            vLLM-compatible API request body
+        """
+        return {
+            "model": canonical.model,
+            "text_1": canonical.text_1,
+            "text_2": canonical.text_2,
+        }
+
+    @staticmethod
+    def translate_score_response(
+        data: Dict[str, Any],
+    ) -> CanonicalScoreResponse:
+        """Translate vLLM score response to canonical format.
+
+        Args:
+            data: Raw vLLM score response
+
+        Returns:
+            CanonicalScoreResponse
+        """
+        usage_data = data.get("usage", {})
+        usage = UsageInfo(
+            prompt_tokens=usage_data.get("prompt_tokens", 0),
+            completion_tokens=usage_data.get("completion_tokens", 0),
+            total_tokens=usage_data.get("total_tokens", 0),
+        )
+
+        score_data = []
+        for d in data.get("data", []):
+            score_data.append(CanonicalScoreData(
+                index=d["index"],
+                score=d["score"],
+            ))
+
+        return CanonicalScoreResponse(
+            id=data.get("id", ""),
+            object=data.get("object", "list"),
+            model=data.get("model", ""),
+            data=score_data,
+            usage=usage,
+        )
 
     @staticmethod
     def translate_embedding_response(

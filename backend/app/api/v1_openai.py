@@ -27,6 +27,8 @@ from backend.app.api.auth import authenticate_request, get_current_api_key
 from backend.app.core.canonical_schemas import (
     CanonicalChatRequest,
     CanonicalEmbeddingRequest,
+    CanonicalRerankRequest,
+    CanonicalScoreRequest,
 )
 from backend.app.core.scheduler.policy import get_scheduler
 from backend.app.core.telemetry.registry import get_registry
@@ -237,4 +239,108 @@ async def embeddings(
 
     service = InferenceService(db)
     response = await service.embedding(canonical, user, api_key, request)
+    return response
+
+
+@router.post("/rerank")
+async def rerank(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    auth: Tuple[User, ApiKey] = Depends(authenticate_request),
+):
+    """
+    Rerank documents against a query.
+    """
+    user, api_key = auth
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON body",
+        )
+
+    request_id = f"rnk-{uuid.uuid4().hex[:24]}"
+    bind_request_context(request_id=request_id, user_id=user.id)
+
+    try:
+        canonical = OpenAIInTranslator.translate_rerank_request(body)
+        canonical.request_id = request_id
+        canonical.user_id = user.id
+        canonical.api_key_id = api_key.id
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid request format: {str(e)}",
+        )
+
+    # Early model validation
+    registry = get_registry()
+    if not await registry.model_exists(canonical.model):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": {
+                    "message": f"The model '{canonical.model}' does not exist",
+                    "type": "invalid_request_error",
+                    "code": "model_not_found",
+                }
+            },
+        )
+
+    service = InferenceService(db)
+    response = await service.rerank(canonical, user, api_key, request)
+    return response
+
+
+@router.post("/score")
+async def score(
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    auth: Tuple[User, ApiKey] = Depends(authenticate_request),
+):
+    """
+    Score similarity between text pairs.
+    """
+    user, api_key = auth
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON body",
+        )
+
+    request_id = f"scr-{uuid.uuid4().hex[:24]}"
+    bind_request_context(request_id=request_id, user_id=user.id)
+
+    try:
+        canonical = OpenAIInTranslator.translate_score_request(body)
+        canonical.request_id = request_id
+        canonical.user_id = user.id
+        canonical.api_key_id = api_key.id
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid request format: {str(e)}",
+        )
+
+    # Early model validation
+    registry = get_registry()
+    if not await registry.model_exists(canonical.model):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": {
+                    "message": f"The model '{canonical.model}' does not exist",
+                    "type": "invalid_request_error",
+                    "code": "model_not_found",
+                }
+            },
+        )
+
+    service = InferenceService(db)
+    response = await service.score(canonical, user, api_key, request)
     return response

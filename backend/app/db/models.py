@@ -101,6 +101,7 @@ class Modality(str, PyEnum):
     COMPLETION = "completion"
     EMBEDDING = "embedding"
     MULTIMODAL = "multimodal"
+    RERANKING = "reranking"
 
 
 # Group Model

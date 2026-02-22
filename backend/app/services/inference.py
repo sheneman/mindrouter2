@@ -31,6 +31,8 @@ from backend.app.core.canonical_schemas import (
     CanonicalEmbeddingRequest,
     CanonicalEmbeddingResponse,
     CanonicalMessage,
+    CanonicalRerankRequest,
+    CanonicalScoreRequest,
     CanonicalStreamChunk,
     CanonicalStreamChoice,
     CanonicalStreamDelta,
@@ -229,6 +231,82 @@ class InferenceService:
             await self._complete_request(
                 db_request, backend.id, response, job,
                 modality=Modality.EMBEDDING
+            )
+
+            return response
+
+        except Exception as e:
+            await self._fail_request(db_request, None, str(e), job)
+            raise
+
+    async def rerank(
+        self,
+        request: CanonicalRerankRequest,
+        user: User,
+        api_key: ApiKey,
+        http_request: Request,
+    ) -> Dict[str, Any]:
+        """Handle rerank request."""
+        await self._check_quota(user, api_key)
+
+        db_request = await self._create_request_record(
+            request, user, api_key, http_request, "/v1/rerank",
+            modality=Modality.RERANKING
+        )
+
+        job = self._scheduler.create_job_from_rerank_request(
+            request, user.id, api_key.id
+        )
+        job.request_id = db_request.request_uuid
+
+        try:
+            response, backend = await self._proxy_with_retry(
+                request, job, user,
+                modality=Modality.RERANKING,
+                proxy_fn="_proxy_rerank_request",
+            )
+
+            await self._complete_request(
+                db_request, backend.id, response, job,
+                modality=Modality.RERANKING
+            )
+
+            return response
+
+        except Exception as e:
+            await self._fail_request(db_request, None, str(e), job)
+            raise
+
+    async def score(
+        self,
+        request: CanonicalScoreRequest,
+        user: User,
+        api_key: ApiKey,
+        http_request: Request,
+    ) -> Dict[str, Any]:
+        """Handle score request."""
+        await self._check_quota(user, api_key)
+
+        db_request = await self._create_request_record(
+            request, user, api_key, http_request, "/v1/score",
+            modality=Modality.RERANKING
+        )
+
+        job = self._scheduler.create_job_from_score_request(
+            request, user.id, api_key.id
+        )
+        job.request_id = db_request.request_uuid
+
+        try:
+            response, backend = await self._proxy_with_retry(
+                request, job, user,
+                modality=Modality.RERANKING,
+                proxy_fn="_proxy_score_request",
+            )
+
+            await self._complete_request(
+                db_request, backend.id, response, job,
+                modality=Modality.RERANKING
             )
 
             return response
@@ -885,6 +963,52 @@ class InferenceService:
         else:
             canonical = VLLMOutTranslator.translate_embedding_response(data)
 
+        return canonical.model_dump(exclude_none=True, by_alias=True)
+
+    async def _proxy_rerank_request(
+        self,
+        request: CanonicalRerankRequest,
+        backend: Backend,
+    ) -> Dict[str, Any]:
+        """Proxy rerank request to backend (vLLM only)."""
+        if backend.engine == BackendEngine.OLLAMA:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Reranking is not supported on Ollama backends",
+            )
+
+        client = await self._get_http_client()
+        payload = VLLMOutTranslator.translate_rerank_request(request)
+        url = f"{backend.url}/v1/rerank"
+
+        response = await client.post(url, json=payload)
+        response.raise_for_status()
+        data = response.json()
+
+        canonical = VLLMOutTranslator.translate_rerank_response(data)
+        return canonical.model_dump(exclude_none=True, by_alias=True)
+
+    async def _proxy_score_request(
+        self,
+        request: CanonicalScoreRequest,
+        backend: Backend,
+    ) -> Dict[str, Any]:
+        """Proxy score request to backend (vLLM only)."""
+        if backend.engine == BackendEngine.OLLAMA:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Scoring is not supported on Ollama backends",
+            )
+
+        client = await self._get_http_client()
+        payload = VLLMOutTranslator.translate_score_request(request)
+        url = f"{backend.url}/v1/score"
+
+        response = await client.post(url, json=payload)
+        response.raise_for_status()
+        data = response.json()
+
+        canonical = VLLMOutTranslator.translate_score_response(data)
         return canonical.model_dump(exclude_none=True, by_alias=True)
 
     async def _proxy_ollama_chat(

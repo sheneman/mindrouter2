@@ -950,6 +950,8 @@ class BackendRegistry:
                         modality = Modality.CHAT
                         if model_info.supports_multimodal:
                             modality = Modality.MULTIMODAL
+                        elif "rerank" in model_info.name.lower():
+                            modality = Modality.RERANKING
                         elif "embed" in model_info.name.lower():
                             modality = Modality.EMBEDDING
 

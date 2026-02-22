@@ -346,6 +346,63 @@ class CanonicalEmbeddingResponse(BaseModel):
     usage: UsageInfo
 
 
+# Rerank / Score Schemas
+class CanonicalRerankRequest(BaseModel):
+    """Canonical rerank request."""
+    model: str
+    query: str
+    documents: List[str]
+    top_n: Optional[int] = None
+    return_documents: bool = True
+
+    # MindRouter metadata
+    request_id: Optional[str] = None
+    user_id: Optional[int] = None
+    api_key_id: Optional[int] = None
+
+
+class CanonicalRerankResult(BaseModel):
+    """A single rerank result."""
+    index: int
+    relevance_score: float
+    document: Optional[Dict[str, Any]] = None
+
+
+class CanonicalRerankResponse(BaseModel):
+    """Canonical rerank response."""
+    id: str = ""
+    model: str = ""
+    results: List[CanonicalRerankResult] = []
+    usage: UsageInfo = UsageInfo()
+
+
+class CanonicalScoreRequest(BaseModel):
+    """Canonical score request."""
+    model: str
+    text_1: str
+    text_2: Union[str, List[str]]
+
+    # MindRouter metadata
+    request_id: Optional[str] = None
+    user_id: Optional[int] = None
+    api_key_id: Optional[int] = None
+
+
+class CanonicalScoreData(BaseModel):
+    """A single score data point."""
+    index: int
+    score: float
+
+
+class CanonicalScoreResponse(BaseModel):
+    """Canonical score response."""
+    id: str = ""
+    object: str = "list"
+    model: str = ""
+    data: List[CanonicalScoreData] = []
+    usage: UsageInfo = UsageInfo()
+
+
 class CanonicalErrorResponse(BaseModel):
     """Canonical error response."""
     error: Dict[str, Any]  # {"message": "...", "type": "...", "code": "..."}

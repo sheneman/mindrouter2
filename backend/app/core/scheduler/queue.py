@@ -29,6 +29,7 @@ class JobModality(str, Enum):
     COMPLETION = "completion"
     EMBEDDING = "embedding"
     MULTIMODAL = "multimodal"
+    RERANKING = "reranking"
 
 
 @dataclass

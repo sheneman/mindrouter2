@@ -259,6 +259,8 @@ docker compose exec app python scripts/seed_dev_data.py</code></pre>
                         <tr><td>POST</td><td><code>/v1/chat/completions</code></td><td>API Key</td><td>Chat completions (streaming and non-streaming)</td></tr>
                         <tr><td>POST</td><td><code>/v1/completions</code></td><td>API Key</td><td>Text completions (legacy)</td></tr>
                         <tr><td>POST</td><td><code>/v1/embeddings</code></td><td>API Key</td><td>Generate embeddings</td></tr>
+                        <tr><td>POST</td><td><code>/v1/rerank</code></td><td>API Key</td><td>Rerank documents against a query</td></tr>
+                        <tr><td>POST</td><td><code>/v1/score</code></td><td>API Key</td><td>Score similarity between text pairs</td></tr>
                         <tr><td>GET</td><td><code>/v1/models</code></td><td>API Key</td><td>List available models</td></tr>
                     </tbody>
                 </table>
@@ -371,6 +373,31 @@ docker compose exec app python scripts/seed_dev_data.py</code></pre>
   -H "Authorization: Bearer mr2_your-api-key" \
   -H "Content-Type: application/json" \
   -d '{"model": "nomic-embed-text", "input": "Hello world"}'</code></pre>
+
+                <h4>Reranking</h4>
+                <pre><code>curl -X POST http://localhost:8000/v1/rerank \
+  -H "Authorization: Bearer mr2_your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen/Qwen3-Reranker-8B",
+    "query": "What is machine learning?",
+    "documents": [
+      "Machine learning is a subset of AI.",
+      "The weather is sunny today.",
+      "Deep learning uses neural networks."
+    ],
+    "top_n": 2
+  }'</code></pre>
+
+                <h4>Scoring</h4>
+                <pre><code>curl -X POST http://localhost:8000/v1/score \
+  -H "Authorization: Bearer mr2_your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen/Qwen3-Reranker-8B",
+    "text_1": "What is machine learning?",
+    "text_2": ["Machine learning is a subset of AI.", "The weather is sunny today."]
+  }'</code></pre>
 
                 <h4>List Models</h4>
                 <pre><code>curl http://localhost:8000/v1/models \

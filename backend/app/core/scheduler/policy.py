@@ -23,6 +23,8 @@ from backend.app.core.canonical_schemas import (
     CanonicalChatRequest,
     CanonicalCompletionRequest,
     CanonicalEmbeddingRequest,
+    CanonicalRerankRequest,
+    CanonicalScoreRequest,
 )
 from backend.app.db.models import Backend, Model
 from backend.app.settings import get_settings
@@ -171,6 +173,56 @@ class SchedulerPolicy:
             api_key_id=api_key_id,
             model=request.model,
             modality=JobModality.EMBEDDING,
+            is_streaming=False,
+            requires_multimodal=False,
+            requires_structured_output=False,
+            estimated_prompt_tokens=estimated_tokens,
+            estimated_completion_tokens=0,
+            request_data=request.model_dump(),
+        )
+
+    def create_job_from_rerank_request(
+        self,
+        request: CanonicalRerankRequest,
+        user_id: int,
+        api_key_id: int,
+    ) -> Job:
+        """Create a Job from a rerank or score request."""
+        # Estimate tokens from query + all documents
+        text = request.query + " " + " ".join(request.documents)
+        estimated_tokens = self.estimate_tokens(text)
+
+        return Job(
+            request_id=request.request_id or "",
+            user_id=user_id,
+            api_key_id=api_key_id,
+            model=request.model,
+            modality=JobModality.RERANKING,
+            is_streaming=False,
+            requires_multimodal=False,
+            requires_structured_output=False,
+            estimated_prompt_tokens=estimated_tokens,
+            estimated_completion_tokens=0,
+            request_data=request.model_dump(),
+        )
+
+    def create_job_from_score_request(
+        self,
+        request: CanonicalScoreRequest,
+        user_id: int,
+        api_key_id: int,
+    ) -> Job:
+        """Create a Job from a score request."""
+        text_2 = request.text_2 if isinstance(request.text_2, str) else " ".join(request.text_2)
+        text = request.text_1 + " " + text_2
+        estimated_tokens = self.estimate_tokens(text)
+
+        return Job(
+            request_id=request.request_id or "",
+            user_id=user_id,
+            api_key_id=api_key_id,
+            model=request.model,
+            modality=JobModality.RERANKING,
             is_streaming=False,
             requires_multimodal=False,
             requires_structured_output=False,
