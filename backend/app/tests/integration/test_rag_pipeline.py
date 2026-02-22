@@ -10,14 +10,18 @@ Requirements:
 """
 
 import math
+import os
 
 import httpx
 import pytest
 
-BASE_URL = "http://mindrouter.uidaho.edu"
-API_KEY = "mr2_Mil0V-4wOxQU96k6ufJroMZCJPWnN5QGjy4MmdGXq2Q"
+BASE_URL = os.environ.get("MINDROUTER_BASE_URL", "https://mindrouter.uidaho.edu")
+API_KEY = os.environ.get("MINDROUTER_API_KEY", "")
 EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-8B"
 RERANKER_MODEL = "Qwen/Qwen3-Reranker-8B"
+
+if not API_KEY:
+    pytest.skip("MINDROUTER_API_KEY not set", allow_module_level=True)
 
 HEADERS = {
     "Authorization": f"Bearer {API_KEY}",
